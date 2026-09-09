@@ -1,0 +1,1904 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>家谱关系梳理与称谓演算板</title>
+<style>
+  :root {
+    --bg: #f4f6fa;
+    --panel: #ffffff;
+    --ink: #1f2937;
+    --ink-2: #4b5563;
+    --ink-3: #9ca3af;
+    --line: #e5e7eb;
+    --brand: #2563eb;
+    --brand-soft: #dbeafe;
+    --male: #2563eb;
+    --female: #db2777;
+    --unknown: #6b7280;
+    --edge: #b9c3d4;
+    --warn: #d97706;
+    --ok: #059669;
+    --tag-pink: #fce7f3;
+    --tag-pink-ink: #be185d;
+    --tag-blue: #dbeafe;
+    --tag-blue-ink: #1d4ed8;
+    --tag-green: #d1fae5;
+    --tag-green-ink: #047857;
+    --shadow: 0 4px 16px rgba(31,41,55,.10);
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    overflow: hidden;
+    font-size: 13px;
+  }
+  button { font-family: inherit; font-size: 12px; cursor: pointer; }
+  input, select, textarea { font-family: inherit; font-size: 12px; }
+
+  /* ---------- Top bar ---------- */
+  #topbar {
+    height: 52px; display: flex; align-items: center; gap: 10px;
+    padding: 0 14px; background: var(--panel); border-bottom: 1px solid var(--line);
+    z-index: 30; position: relative;
+  }
+  #topbar .logo { font-size: 15px; font-weight: 700; white-space: nowrap; display:flex; align-items:center; gap:7px; }
+  #topbar .logo .tree-ic { font-size: 18px; }
+  #topbar .tb-group { display: flex; align-items: center; gap: 6px; }
+  .tb-sep { width: 1px; height: 24px; background: var(--line); margin: 0 4px; }
+  .btn {
+    border: 1px solid var(--line); background: #fff; color: var(--ink-2);
+    padding: 6px 11px; border-radius: 8px; white-space: nowrap; transition: .12s;
+  }
+  .btn:hover { border-color: var(--brand); color: var(--brand); background: #f8faff; }
+  .btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .btn.primary:hover { background: #1d4ed8; color: #fff; }
+  .btn.danger:hover { border-color: #dc2626; color: #dc2626; background: #fef2f2; }
+  .btn.ghost { border-color: transparent; background: transparent; }
+  .btn.ghost:hover { background: #f1f5f9; }
+  .tb-select {
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; background: #fff; color: var(--ink-2);
+  }
+  #egoChip {
+    display: none; align-items: center; gap: 6px; background: var(--tag-green);
+    color: var(--tag-green-ink); padding: 5px 10px; border-radius: 20px; font-weight: 600;
+  }
+  #egoChip .clear-x { cursor: pointer; opacity: .6; }
+  #egoChip .clear-x:hover { opacity: 1; }
+  .spacer { flex: 1; }
+  #zoomLabel { color: var(--ink-3); font-size: 11px; min-width: 38px; text-align: center; }
+
+  /* ---------- Main layout ---------- */
+  #main { display: flex; height: calc(100% - 52px); }
+  #sidebar {
+    width: 312px; min-width: 312px; background: var(--panel); border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; z-index: 20;
+  }
+  #tabs { display: flex; border-bottom: 1px solid var(--line); }
+  #tabs .tab {
+    flex: 1; text-align: center; padding: 11px 0; color: var(--ink-3); cursor: pointer;
+    border-bottom: 2px solid transparent; user-select: none; font-weight: 500;
+  }
+  #tabs .tab.active { color: var(--brand); border-bottom-color: var(--brand); }
+  #sideBody { flex: 1; overflow-y: auto; padding: 12px; }
+  #sideBody::-webkit-scrollbar { width: 8px; }
+  #sideBody::-webkit-scrollbar-thumb { background: #d7dde8; border-radius: 4px; }
+
+  .section-title { font-size: 12px; font-weight: 700; color: var(--ink-2); margin: 4px 0 8px; display:flex; justify-content:space-between; align-items:center;}
+  .section-title .hint { font-weight: 400; color: var(--ink-3); font-size: 11px; }
+
+  .person-row {
+    display: flex; align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid var(--line);
+    border-radius: 8px; margin-bottom: 6px; cursor: pointer; background: #fff; transition: .1s;
+  }
+  .person-row:hover { border-color: #bfdbfe; background: #f8fbff; }
+  .person-row.selected { border-color: var(--brand); background: var(--brand-soft); }
+  .person-row .p-name { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .person-row .p-sub { color: var(--ink-3); font-size: 11px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .dot.male { background: var(--male); }
+  .dot.female { background: var(--female); }
+  .dot.unknown { background: var(--unknown); }
+
+  .branch-card { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; overflow: hidden; }
+  .branch-head { display: flex; align-items: center; gap: 7px; padding: 8px 10px; background: #fafbfd; cursor: pointer; }
+  .branch-head:hover { background: #f3f6fc; }
+  .branch-head .caret { color: var(--ink-3); width: 12px; transition: transform .15s; }
+  .branch-card.open .caret { transform: rotate(90deg); }
+  .branch-head .b-name { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .branch-head .b-count { color: var(--ink-3); font-size: 11px; }
+  .branch-members { display: none; padding: 4px 10px 8px 28px; }
+  .branch-card.open .branch-members { display: block; }
+  .branch-member { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .branch-member:hover { background: #f1f5f9; }
+  .branch-member .p-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ---------- Editor form ---------- */
+  .field { margin-bottom: 11px; }
+  .field label { display: block; font-size: 11px; color: var(--ink-2); margin-bottom: 4px; font-weight: 600; }
+  .field input[type=text], .field input[type=number], .field select, .field textarea {
+    width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; color: var(--ink);
+    background: #fff; outline: none;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--brand); box-shadow: 0 0 0 2px rgba(37,99,235,.12); }
+  .field textarea { resize: vertical; min-height: 54px; }
+  .seg { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg .opt { flex: 1; text-align: center; padding: 6px 0; cursor: pointer; color: var(--ink-2); background: #fff; user-select: none; }
+  .seg .opt + .opt { border-left: 1px solid var(--line); }
+  .seg .opt.on { background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+  .form-actions { display: flex; gap: 8px; margin-top: 14px; }
+  .form-actions .btn { flex: 1; }
+  .gen-warn { display: none; background: #fffbeb; border: 1px solid #fde68a; color: var(--warn); font-size: 11px; padding: 6px 8px; border-radius: 6px; margin-bottom: 10px; }
+  .editor-empty { color: var(--ink-3); text-align: center; padding: 40px 10px; line-height: 1.8; }
+  .mini-link { color: var(--brand); cursor: pointer; }
+  .mini-link:hover { text-decoration: underline; }
+
+  /* kinship list */
+  .kin-row {
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 7px; background: #fff;
+  }
+  .kin-row .kr-top { display: flex; align-items: center; gap: 7px; }
+  .kin-row .kr-target { font-weight: 600; flex: 1; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kin-row .kr-term { font-weight: 700; color: var(--brand); }
+  .kin-row .kr-term.custom { color: var(--female); }
+  .kin-row .kr-tag { font-size: 10px; padding: 1px 7px; border-radius: 10px; }
+  .tag-直系 { background: var(--tag-blue); color: var(--tag-blue-ink); }
+  .tag-祖孙 { background: #e0e7ff; color: #4338ca; }
+  .tag-叔侄 { background: #fef3c7; color: #b45309; }
+  .tag-兄弟姐妹 { background: var(--tag-green); color: var(--tag-green-ink); }
+  .tag-堂亲 { background: var(--tag-pink); color: var(--tag-pink-ink); }
+  .tag-表亲 { background: #ffedd5; color: #c2410c; }
+  .tag-远亲 { background: #f3f4f6; color: #4b5563; }
+  .tag-无关联 { background: #f3f4f6; color: #9ca3af; }
+  .kin-row .kr-detail { color: var(--ink-3); font-size: 11px; margin: 3px 0 6px; }
+  .kin-row .kr-edit { display: none; margin-top: 6px; }
+  .kin-row.editing .kr-edit { display: block; }
+  .kin-row .kr-edit input { width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+  .kin-row .kr-notes { width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; margin-top: 6px; min-height: 40px; }
+  .kin-row .kr-btns { display: flex; gap: 6px; margin-top: 6px; }
+  .kin-row .kr-btns .btn { padding: 4px 9px; font-size: 11px; }
+  .kr-note-preview { color: var(--ink-3); font-size: 11px; margin-top: 3px; font-style: italic; }
+
+  /* ---------- Canvas ---------- */
+  #canvasWrap { flex: 1; position: relative; overflow: hidden; background:
+    radial-gradient(circle, #d9e0ec 1px, transparent 1px);
+    background-size: 22px 22px; background-color: var(--bg);
+    cursor: grab;
+  }
+  #canvasWrap.panning { cursor: grabbing; }
+  #viewport { position: absolute; left: 0; top: 0; transform-origin: 0 0; width: 0; height: 0; }
+  #edgeLayer { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+  .edge-path { fill: none; stroke: var(--edge); stroke-width: 1.6; }
+  .node {
+    position: absolute; width: 132px; height: 78px; background: #fff;
+    border: 2px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 7px 9px; cursor: grab; user-select: none;
+    transition: box-shadow .12s, border-color .12s;
+  }
+  .node:active { cursor: grabbing; }
+  .node.male { border-top: 3px solid var(--male); }
+  .node.female { border-top: 3px solid var(--female); }
+  .node.unknown { border-top: 3px solid var(--unknown); }
+  .node.selected { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(37,99,235,.18), var(--shadow); }
+  .node.is-ego { border-color: var(--ok); }
+  .node.is-ego.selected { box-shadow: 0 0 0 3px rgba(5,150,105,.2), var(--shadow); }
+  .node .n-name { font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 5px; }
+  .node .n-ego-badge { background: var(--ok); color: #fff; font-size: 9px; padding: 0 5px; border-radius: 8px; font-weight: 600; }
+  .node .n-meta { color: var(--ink-3); font-size: 10px; margin-top: 2px; }
+  .node .n-term {
+    margin-top: 4px; font-size: 11px; font-weight: 600; color: var(--brand);
+    background: var(--brand-soft); border-radius: 5px; padding: 2px 6px;
+    display: inline-block; max-width: 114px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .node .n-term.custom { color: var(--female); background: var(--tag-pink); }
+  .node .n-col-badge {
+    position: absolute; right: -9px; top: -9px; min-width: 20px; height: 20px; padding: 0 4px;
+    background: #4b5563; color: #fff; border-radius: 10px; font-size: 10px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+  }
+  .node .n-col-badge:hover { background: var(--brand); }
+  .node .n-actions {
+    position: absolute; top: -11px; left: -9px; display: none; gap: 3px;
+  }
+  .node:hover .n-actions { display: flex; }
+  .n-actions .nact {
+    width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line); background: #fff;
+    font-size: 10px; color: var(--ink-2); display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 1px 4px rgba(0,0,0,.12);
+  }
+  .n-actions .nact:hover { color: var(--brand); border-color: var(--brand); }
+
+  #canvasHint {
+    position: absolute; bottom: 12px; left: 12px; background: rgba(255,255,255,.92);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font-size: 11px;
+    color: var(--ink-3); line-height: 1.7; pointer-events: none;
+  }
+  #emptyHint {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  #emptyHint .box { text-align: center; color: var(--ink-3); line-height: 2; background: rgba(255,255,255,.85); padding: 26px 40px; border-radius: 14px; border: 1px dashed #cbd5e1; }
+  #emptyHint .box .big { font-size: 34px; }
+
+  /* toast + modal */
+  #toast {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: #1f2937; color: #fff; padding: 9px 18px; border-radius: 8px; font-size: 12px;
+    opacity: 0; transition: .2s; z-index: 100; pointer-events: none;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #modalMask {
+    display: none; position: fixed; inset: 0; background: rgba(15,23,42,.4); z-index: 90;
+    align-items: center; justify-content: center;
+  }
+  #modalMask.show { display: flex; }
+  .modal {
+    background: #fff; border-radius: 12px; padding: 22px; width: 380px; max-width: 92vw;
+    box-shadow: 0 20px 60px rgba(0,0,0,.25);
+  }
+  .modal h3 { margin: 0 0 10px; font-size: 15px; }
+  .modal p { color: var(--ink-2); font-size: 12px; line-height: 1.7; margin: 0 0 18px; }
+  .modal .m-btns { display: flex; gap: 10px; justify-content: flex-end; }
+
+  .legend { display: flex; gap: 10px; font-size: 11px; color: var(--ink-3); padding: 2px 2px 10px; flex-wrap: wrap; }
+  .legend span { display: flex; align-items: center; gap: 4px; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div class="logo"><span class="tree-ic">🌳</span>家谱演算板</div>
+  <div class="tb-sep"></div>
+  <div class="tb-group">
+    <button class="btn primary" id="btnAdd">＋ 添加人物</button>
+    <select class="tb-select" id="genFilter" title="按辈分筛选"></select>
+  </div>
+  <div class="tb-sep"></div>
+  <div class="tb-group">
+    <button class="btn" id="btnLayout" title="按辈分自动排列">自动布局</button>
+    <button class="btn" id="btnFit" title="适应窗口">适应</button>
+    <button class="btn ghost" id="btnZoomOut">－</button>
+    <span id="zoomLabel">100%</span>
+    <button class="btn ghost" id="btnZoomIn">＋</button>
+  </div>
+  <div id="egoChip">称谓基准：<b id="egoName"></b><span class="clear-x" id="egoClear" title="取消基准">✕</span></div>
+  <div class="spacer"></div>
+  <div class="tb-group">
+    <button class="btn" id="btnSample">载入示例</button>
+    <button class="btn" id="btnExportJson">导出 JSON</button>
+    <button class="btn" id="btnImportJson">导入 JSON</button>
+    <button class="btn" id="btnExportPng">导出 PNG</button>
+    <button class="btn danger" id="btnClear">清空</button>
+  </div>
+</div>
+
+<div id="main">
+  <div id="sidebar">
+    <div id="tabs">
+      <div class="tab active" data-tab="people">人物</div>
+      <div class="tab" data-tab="branches">支系</div>
+      <div class="tab" data-tab="kin">称谓演算</div>
+    </div>
+    <div id="sideBody"></div>
+  </div>
+  <div id="canvasWrap">
+    <div id="viewport">
+      <svg id="edgeLayer" width="1" height="1"></svg>
+      <div id="nodeLayer"></div>
+    </div>
+    <div id="emptyHint"><div class="box">
+      <div class="big">👨‍👩‍👧‍👦</div>
+      <b>画布还是空的</b><br>
+      点击左上角「＋ 添加人物」开始录入，<br>或点击「载入示例」快速体验。<br>
+      <span style="font-size:11px">拖拽背景平移 · 滚轮缩放 · 双击节点设为称谓基准</span>
+    </div></div>
+    <div id="canvasHint">
+      拖拽节点整理布局 · 拖空白处平移 · 滚轮缩放<br>
+      双击节点 = 设为称谓基准（演算以其为“我”）
+    </div>
+  </div>
+</div>
+
+<input type="file" id="fileInput" accept=".json,application/json" style="display:none">
+<div id="toast"></div>
+<div id="modalMask">
+  <div class="modal">
+    <h3 id="mTitle">确认</h3>
+    <p id="mText"></p>
+    <div class="m-btns">
+      <button class="btn" id="mCancel">取消</button>
+      <button class="btn primary" id="mOk">确定</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =====================================================================
+ * 家谱关系梳理与称谓演算板 —— 纯前端单文件
+ * ===================================================================== */
+
+/* ---------------- 常量与工具 ---------------- */
+const STORAGE_KEY = 'family-kin-board-v1';
+const NODE_W = 132, NODE_H = 78, GEN_GAP = 130, SIB_GAP = 42;
+
+const GENDER = [
+  { v: 'male', label: '男' },
+  { v: 'female', label: '女' },
+  { v: 'unknown', label: '未知' },
+];
+const genderLabel = g => ({ male: '男', female: '女', unknown: '?' }[g] || '?');
+
+function uid() { return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function deepCopy(o) { return JSON.parse(JSON.stringify(o)); }
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+function confirmModal(title, text) {
+  return new Promise(resolve => {
+    document.getElementById('mTitle').textContent = title;
+    document.getElementById('mText').textContent = text;
+    const mask = document.getElementById('modalMask');
+    mask.classList.add('show');
+    const done = v => { mask.classList.remove('show'); okBtn.onclick = null; cancelBtn.onclick = null; mask.onclick = null; resolve(v); };
+    const okBtn = document.getElementById('mOk');
+    const cancelBtn = document.getElementById('mCancel');
+    okBtn.onclick = () => done(true);
+    cancelBtn.onclick = () => done(false);
+    mask.onclick = e => { if (e.target === mask) done(false); };
+  });
+}
+
+/* ---------------- 状态 ---------------- */
+/**
+ * state:
+ *  people: [{ id, name, gen, gender, order, fatherId, motherId, note, x, y }]
+ *  customTerms: { "aid>>bid": { term, note } }  // a 称 b 的手工修正
+ *  nodeNotes: { id: 备注 } （人物备注也同时存在 person.note）
+ *  collapsed: { rootId: true }
+ *  egoId, view: {x,y,k}, genFilter, tab
+ */
+let state = {
+  people: [],
+  customTerms: {},
+  collapsed: {},
+  egoId: null,
+  view: { x: 60, y: 40, k: 1 },
+  genFilter: 'all',
+  tab: 'people',
+  selectedId: null,
+  editingId: null,
+};
+
+function save() {
+  try {
+    const persist = {
+      people: state.people,
+      customTerms: state.customTerms,
+      collapsed: state.collapsed,
+      egoId: state.egoId,
+      view: state.view,
+      genFilter: state.genFilter,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(persist));
+  } catch (e) { console.warn('保存失败', e); }
+}
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    const d = JSON.parse(raw);
+    state.people = d.people || [];
+    state.customTerms = d.customTerms || {};
+    state.collapsed = d.collapsed || {};
+    state.egoId = d.egoId || null;
+    if (d.view) state.view = d.view;
+    state.genFilter = d.genFilter || 'all';
+    return state.people.length > 0;
+  } catch (e) { return false; }
+}
+
+/* ---------------- 图查询 ---------------- */
+const byId = id => state.people.find(p => p.id === id) || null;
+
+function childrenOf(id) {
+  return state.people.filter(p => p.fatherId === id || p.motherId === id)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+function parentsOf(p) {
+  return [p.fatherId, p.motherId].filter(Boolean).map(byId).filter(Boolean);
+}
+/** 无父母记录者为根；但无父母的配偶（如娶入/嫁入者）并入对方支系，不单独成支 */
+function spouseOf(id) {
+  const p = byId(id);
+  if (!p) return null;
+  for (const c of childrenOf(id)) {
+    const other = [c.fatherId, c.motherId].find(x => x && x !== id);
+    if (other) return byId(other);
+  }
+  return null;
+}
+function isRoot(p) {
+  if (p.fatherId || p.motherId) return false;
+  const sp = spouseOf(p.id);
+  if (!sp) return true;
+  // 配偶在其父母支系中 → 本人作为配偶并入，不单独成支
+  if (sp.fatherId || sp.motherId) return false;
+  // 双方都无父母（同辈成婚的两位“外来者”）：男性为支系代表，同性别按 id 稳定取一
+  if (sp.gender === 'male' && p.gender !== 'male') return false;
+  if (sp.gender === p.gender && sp.id < p.id) return false;
+  return true;
+}
+function roots() {
+  return state.people.filter(isRoot)
+    .sort((a, b) => (a.gen ?? 0) - (b.gen ?? 0) || (a.order ?? 0) - (b.order ?? 0));
+}
+/** 支系全部成员：后代 + 各代成员无父母的配偶 */
+function branchMembers(id) {
+  const acc = [byId(id)];
+  const queue = [id];
+  const seen = new Set([id]);
+  while (queue.length) {
+    const cur = queue.shift();
+    for (const c of childrenOf(cur)) {
+      if (!seen.has(c.id)) { seen.add(c.id); acc.push(c); queue.push(c.id); }
+      // 孩子的另一方家长，若无父母录入则作为配偶并入本支
+      for (const pid of [c.fatherId, c.motherId]) {
+        if (!pid || seen.has(pid)) continue;
+        const pp = byId(pid);
+        if (pp && !pp.fatherId && !pp.motherId) { seen.add(pid); acc.push(pp); }
+      }
+    }
+    // 根本人无父母的配偶
+    const sp = spouseOf(cur);
+    if (sp && !seen.has(sp.id) && !sp.fatherId && !sp.motherId) {
+      seen.add(sp.id); acc.push(sp);
+    }
+  }
+  return acc;
+}
+
+/* ---------------- 图查询：双亲 BFS（父优先，用于堂/表判定） ---------------- */
+/**
+ * 从 from 出发，沿“父/母”边做 BFS。
+ * 父节点先入队，故最短距离相同时父系路径天然优先。
+ * 返回 { dist, prev }
+ */
+function bfsUp(from) {
+  const dist = new Map(), prev = new Map();
+  const q = [from];
+  dist.set(from, 0);
+  for (let i = 0; i < q.length; i++) {
+    const cur = q[i];
+    const p = byId(cur);
+    if (!p) continue;
+    for (const u of [p.fatherId, p.motherId].filter(Boolean)) {
+      if (!dist.has(u)) { dist.set(u, dist.get(cur) + 1); prev.set(u, cur); q.push(u); }
+    }
+  }
+  return { dist, prev };
+}
+/** 还原 from → ancestorId 的路径（含两端） */
+function reconstruct(from, ancestorId, prev) {
+  const path = [ancestorId];
+  let cur = ancestorId;
+  while (cur !== from) {
+    cur = prev.get(cur);
+    if (cur == null) return null;
+    path.push(cur);
+  }
+  path.reverse();
+  return path;
+}
+/**
+ * 最近共同祖先：从 ego、target 分别 BFS，取共同祖先中
+ * (距 ego + 距 target) 最小者；平局时偏向上溯步数小、且祖先为男性者。
+ */
+function findLCA(egoId, targetId, A, B) {
+  let best = null;
+  for (const [id, da] of A.dist) {
+    if (!B.dist.has(id)) continue;
+    const db = B.dist.get(id);
+    const score = da + db;
+    const better = !best || score < best.score
+      || (score === best.score && da < best.da)
+      || (score === best.score && da === best.da && byId(id).gender === 'male' && byId(best.id).gender !== 'male');
+    if (better) best = { id, score, da, db };
+  }
+  return best;
+}
+
+/** 纯父系祖先链（含自身） */
+function ancestorChain(id) {
+  const chain = [];
+  const seen = new Set();
+  let cur = byId(id);
+  while (cur && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    chain.push(cur);
+    cur = cur.fatherId ? byId(cur.fatherId) : null;
+  }
+  return chain;
+}
+/** 后代 id 集合（含自身）：防止在编辑时把后代选为父母而形成环 */
+function descendantSet(id) {
+  const set = new Set([id]);
+  let added = true;
+  while (added) {
+    added = false;
+    for (const p of state.people) {
+      if (!set.has(p.id) && ((p.fatherId && set.has(p.fatherId)) || (p.motherId && set.has(p.motherId)))) {
+        set.add(p.id); added = true;
+      }
+    }
+  }
+  return set;
+}
+/** 排行比较：a 为长返回 1，b 为长返回 -1，平/未知返回 0 */
+function seniority(a, b) {
+  if (!a || !b) return 0;
+  const oa = a.order ?? 9999, ob = b.order ?? 9999;
+  if (oa === ob) return 0;
+  return oa < ob ? 1 : -1;
+}
+/**
+ * 旁系长幼：
+ *  - 同辈（a==b，如堂表兄弟姐妹）：只比本人出生顺序；
+ *  - 异辈（如堂叔/堂伯）：比共同祖先下两侧连接人（即 LCA 子女）的排行。
+ * 返回 1 = ego 支系为长（对方偏幼，应称“叔”类）；-1 反之；0 未知。
+ */
+function collateralSeniority(ego, target, pathA, pathB, a, b) {
+  if (a === b) return seniority(ego, target);
+  const ca = pathA[a - 1], cb = pathB[b - 1]; // LCA 的两个子女
+  return seniority(ca ? byId(ca) : null, cb ? byId(cb) : null);
+}
+
+/* =====================================================================
+ * 称谓推导引擎
+ * 输入“我(ego)”与“目标(target)”，基于双亲图求最近共同祖先，
+ * 按 (上溯步数 a, 下行步数 b) 推导汉语基础称谓。
+ * 结果: { term, tag, detail(路径说明), placeholder(是否占位待修正) }
+ * ===================================================================== */
+function elderSuffix(sen) { return sen > 0 ? '兄' : sen < 0 ? '弟' : '兄弟'; }
+function femaleElderSuffix(sen) { return sen > 0 ? '姐' : sen < 0 ? '妹' : '姐妹'; }
+
+/** 找到 from 向上到 ancestorId 的路径上，紧邻 from 的第一步父/母节点 */
+function firstStep(from, ancestorId, prev) {
+  let cur = ancestorId, before = null;
+  while (cur !== from) {
+    before = cur;
+    cur = prev.get(cur);
+    if (cur == null) return null;
+  }
+  return byId(before);
+}
+
+function kinship(egoId, targetId) {
+  if (egoId === targetId) return { term: '本人', tag: '直系', detail: '' };
+  const ego = byId(egoId), target = byId(targetId);
+  if (!ego || !target) return null;
+
+  const A = bfsUp(egoId), B = bfsUp(targetId);
+
+  /* ---- 目标是 ego 的祖先 ---- */
+  if (A.dist.has(targetId)) {
+    const n = A.dist.get(targetId);
+    let term;
+    if (n === 1) term = target.gender === 'female' ? '母亲' : '父亲';
+    else term = '曾'.repeat(Math.max(0, n - 2)) + (target.gender === 'female' ? '祖母' : '祖父');
+    // 经母亲上溯到的祖辈为外祖父母
+    if (n === 2) {
+      const step = firstStep(egoId, targetId, A.prev);
+      if (step && step.gender === 'female') {
+        term = target.gender === 'female' ? '外祖母' : '外祖父';
+      }
+    }
+    return { term, tag: n >= 2 ? '祖孙' : '直系', detail: '' };
+  }
+  /* ---- ego 是目标的祖先 ---- */
+  if (B.dist.has(egoId)) {
+    const n = B.dist.get(egoId);
+    const step = firstStep(targetId, egoId, B.prev); // target 的直接父/母
+    const viaMother = step && step.gender === 'female';
+    let term;
+    if (n === 1) term = target.gender === 'female' ? '女儿' : '儿子';
+    else if (n === 2) term = target.gender === 'female'
+      ? (viaMother ? '外孙女' : '孙女')
+      : (viaMother ? '外孙' : '孙子');
+    else term = '曾' + (target.gender === 'female' ? '孙女' : '孙');
+    return { term, tag: n >= 2 ? '祖孙' : '直系', detail: '' };
+  }
+
+  const lca = findLCA(egoId, targetId, A, B);
+  if (!lca) return { term: '无亲属关联', tag: '无关联', detail: '两人物未通过父母关系连通', placeholder: true };
+
+  const anc = byId(lca.id);
+  const a = lca.da, b = lca.db;
+  const pathA = reconstruct(egoId, anc.id, A.prev) || [];
+  const pathB = reconstruct(targetId, anc.id, B.prev) || [];
+  const detail = `共同祖先：${anc.name || '（未命名）'}（${pathA.map(p => byId(p).name || '?').join(' → ')} ／ ${pathB.map(p => byId(p).name || '?').join(' → ')}）`;
+  const sen = collateralSeniority(ego, target, pathA, pathB, a, b);
+  const linkA = pathA[1] ? byId(pathA[1]) : null; // ego 侧上溯连接人
+  const linkB = pathB[1] ? byId(pathB[1]) : null; // target 侧上溯连接人
+  // 父系一脉：共同祖先之下两侧连接人全部为男性
+  const maleLine = pathA.length >= 2 && pathB.length >= 2
+    && pathA.slice(1).every(id => byId(id).gender === 'male')
+    && pathB.slice(1).every(id => byId(id).gender === 'male');
+  const prefix = maleLine ? '堂' : '表';
+
+  /* ---- 兄弟姐妹 ---- */
+  if (a === 1 && b === 1) {
+    if (target.gender === 'female') return { term: femaleElderSuffix(sen), tag: '兄弟姐妹', detail };
+    return { term: elderSuffix(sen), tag: '兄弟姐妹', detail };
+  }
+
+  /* ---- (2,1) 父母辈：伯/叔/姑 vs 舅/姨。sen>0 表示 ego 之父为长，对方偏幼→叔 ---- */
+  if (a === 2 && b === 1) {
+    if (linkA && linkA.gender === 'female') {
+      return { term: target.gender === 'female' ? '姨母' : '舅父', tag: '叔侄', detail };
+    }
+    if (target.gender === 'female') return { term: '姑母', tag: '叔侄', detail };
+    return { term: sen > 0 ? '叔父' : sen < 0 ? '伯父' : '伯/叔父', tag: '叔侄', detail };
+  }
+
+  /* ---- (1,2) 子女辈：侄/甥（由与我同辈的连接人性别决定） ---- */
+  if (a === 1 && b === 2) {
+    if (linkB && linkB.gender === 'female') {
+      return { term: target.gender === 'female' ? '甥女' : '外甥', tag: '叔侄', detail };
+    }
+    return { term: target.gender === 'female' ? '侄女' : '侄子', tag: '叔侄', detail };
+  }
+
+  /* ---- (2,2) 堂/表兄弟姐妹 ---- */
+  if (a === 2 && b === 2) {
+    const suf = target.gender === 'female' ? femaleElderSuffix(sen) : elderSuffix(sen);
+    return { term: prefix + suf, tag: maleLine ? '堂亲' : '表亲', detail };
+  }
+
+  /* ---- (3,2) 父母的堂/表兄弟姐妹：堂伯叔姑 / 表伯叔姑 ---- */
+  if (a === 3 && b === 2) {
+    if (target.gender === 'female') return { term: prefix + '姑', tag: maleLine ? '堂亲' : '表亲', detail, placeholder: true };
+    return { term: prefix + (sen > 0 ? '叔' : sen < 0 ? '伯' : '伯/叔'), tag: maleLine ? '堂亲' : '表亲', detail, placeholder: true };
+  }
+
+  /* ---- (2,3) 堂/表兄弟姐妹之子女：堂/表 侄甥 ---- */
+  if (a === 2 && b === 3) {
+    if (linkB && linkB.gender === 'female') {
+      return { term: prefix + (target.gender === 'female' ? '甥女' : '甥'), tag: maleLine ? '堂亲' : '表亲', detail, placeholder: true };
+    }
+    return { term: prefix + (target.gender === 'female' ? '侄女' : '侄'), tag: maleLine ? '堂亲' : '表亲', detail, placeholder: true };
+  }
+
+  /* ---- (3,3) 再从兄弟 / 二表 ---- */
+  if (a === 3 && b === 3) {
+    const suf = target.gender === 'female' ? femaleElderSuffix(sen) : elderSuffix(sen);
+    return { term: (maleLine ? '再从' : '二表') + suf, tag: maleLine ? '堂亲' : '表亲', detail, placeholder: true };
+  }
+
+  /* ---- (3,1) 祖父母的同辈：伯祖父母/叔祖父母/姑祖母，母系则舅祖父/姨祖母 ---- */
+  if (a === 3 && b === 1) {
+    if (linkA && linkA.gender === 'female') {
+      return { term: target.gender === 'female' ? '姨祖母' : '舅祖父', tag: '祖孙', detail, placeholder: true };
+    }
+    if (target.gender === 'female') return { term: '姑祖母', tag: '祖孙', detail, placeholder: true };
+    return { term: sen > 0 ? '叔祖父' : sen < 0 ? '伯祖父' : '伯/叔祖父', tag: '祖孙', detail, placeholder: true };
+  }
+
+  /* ---- (1,3) 兄弟姐妹之孙辈：侄孙 / 甥孙 ---- */
+  if (a === 1 && b === 3) {
+    if (linkB && linkB.gender === 'female') {
+      return { term: prefix === '堂' ? '甥孙' : '表' + (target.gender === 'female' ? '甥孙女' : '甥孙'), tag: '叔侄', detail, placeholder: true };
+    }
+    return { term: (target.gender === 'female' ? '侄孙女' : '侄孙'), tag: '叔侄', detail, placeholder: true };
+  }
+
+  /* ---- 更远：远房占位 ---- */
+  {
+    let suf;
+    if (a === b) suf = target.gender === 'female' ? femaleElderSuffix(sen) : elderSuffix(sen);
+    else if (a > b) suf = '祖辈';
+    else suf = '孙辈';
+    return { term: (maleLine ? '远房堂' : '远房表') + suf, tag: '远亲', detail, placeholder: true };
+  }
+}
+
+
+
+/** 称谓（含用户手工修正） */
+function displayKinship(egoId, targetId) {
+  const k = kinship(egoId, targetId);
+  if (!k) return null;
+  const key = egoId + '>>' + targetId;
+  const custom = state.customTerms[key];
+  if (custom && custom.term) return { ...k, term: custom.term, custom: true, customNote: custom.note || '' };
+  return k;
+}
+
+/* ---------------- 可见性（筛选 + 折叠） ---------------- */
+/** 被折叠支系隐藏掉的人物 id 集合（支系根本身不隐藏） */
+function hiddenByCollapse() {
+  const set = new Set();
+  for (const id of Object.keys(state.collapsed)) {
+    if (!state.collapsed[id]) continue;
+    for (const m of branchMembers(id)) {
+      if (m.id !== id) set.add(m.id);
+    }
+  }
+  return set;
+}
+
+/** 节点是否可见：辈分筛选 + 所在支系是否折叠 */
+function isVisible(p, hiddenSet) {
+  if (state.genFilter !== 'all' && String(p.gen) !== String(state.genFilter)) return false;
+  if ((hiddenSet || hiddenByCollapse()).has(p.id)) return false;
+  return true;
+}
+
+/* =====================================================================
+ * 渲染：画布节点与连线
+ * ===================================================================== */
+const viewport = document.getElementById('viewport');
+const nodeLayer = document.getElementById('nodeLayer');
+const edgeLayer = document.getElementById('edgeLayer');
+const canvasWrap = document.getElementById('canvasWrap');
+
+function applyView() {
+  const { x, y, k } = state.view;
+  viewport.style.transform = `translate(${x}px,${y}px) scale(${k})`;
+  document.getElementById('zoomLabel').textContent = Math.round(k * 100) + '%';
+}
+
+function renderCanvas() {
+  nodeLayer.innerHTML = '';
+  edgeLayer.innerHTML = '';
+  document.getElementById('emptyHint').style.display = state.people.length ? 'none' : 'flex';
+  const hiddenSet = hiddenByCollapse();
+
+  // 配偶连线（无父母连接、但共享子女）——浅灰虚线
+  const drawn = new Set();
+  const coupleDrawn = new Set();
+  for (const p of state.people) {
+    if (!isVisible(p, hiddenSet)) continue;
+    for (const par of [p.fatherId, p.motherId]) {
+      if (!par) continue;
+      const parent = byId(par);
+      if (!parent || !isVisible(parent, hiddenSet)) continue;
+      const key = par + '->' + p.id;
+      if (drawn.has(key)) continue;
+      drawn.add(key);
+      edgeLayer.appendChild(buildEdge(parent, p));
+    }
+  }
+  // 画配偶之间的虚线
+  for (const p of state.people) {
+    if (!isVisible(p, hiddenSet)) continue;
+    const sp = spouseOf(p.id);
+    if (sp && isVisible(sp, hiddenSet)) {
+      const key = [p.id, sp.id].sort().join('~');
+      if (coupleDrawn.has(key)) continue;
+      coupleDrawn.add(key);
+      edgeLayer.appendChild(buildSpouseEdge(p, sp));
+    }
+  }
+
+  // 节点
+  for (const p of state.people) {
+    if (!isVisible(p, hiddenSet)) continue;
+    nodeLayer.appendChild(buildNode(p, hiddenSet));
+  }
+  applyView();
+}
+
+function buildEdge(parent, child) {
+  const x1 = (parent.x ?? 0) + NODE_W / 2;
+  const y1 = (parent.y ?? 0) + NODE_H - 6;
+  const x2 = (child.x ?? 0) + NODE_W / 2;
+  const y2 = (child.y ?? 0) + 8;
+  const my = (y1 + y2) / 2;
+  const d = `M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}`;
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', d);
+  path.setAttribute('class', 'edge-path');
+  return path;
+}
+function buildSpouseEdge(a, b) {
+  const x1 = (a.x ?? 0) + NODE_W, y1 = (a.y ?? 0) + NODE_H / 2;
+  const x2 = (b.x ?? 0), y2 = (b.y ?? 0) + NODE_H / 2;
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  line.setAttribute('x1', Math.min(x1, x2)); line.setAttribute('y1', y1);
+  line.setAttribute('x2', Math.max(x1, x2)); line.setAttribute('y2', y2);
+  line.setAttribute('stroke', '#cbd5e1');
+  line.setAttribute('stroke-width', '1.2');
+  line.setAttribute('stroke-dasharray', '4 4');
+  return line;
+}
+
+function buildNode(p, hiddenSet) {
+  const el = document.createElement('div');
+  el.className = `node ${p.gender}${state.selectedId === p.id ? ' selected' : ''}${state.egoId === p.id ? ' is-ego' : ''}`;
+  el.style.left = (p.x ?? 0) + 'px';
+  el.style.top = (p.y ?? 0) + 'px';
+  el.dataset.id = p.id;
+
+  const collapsedHere = !!state.collapsed[p.id];
+  const hiddenCount = collapsedHere
+    ? branchMembers(p.id).filter(m => m.id !== p.id).length : 0;
+  let termBadge = '';
+  if (state.egoId && state.egoId !== p.id) {
+    const ego = byId(state.egoId);
+    const k = ego ? displayKinship(state.egoId, p.id) : null;
+    if (k && k.tag !== '无关联') termBadge = `<span class="n-term${k.custom ? ' custom' : ''}" title="${esc(k.term)}${k.placeholder ? '（推导占位，可手工修正）' : ''}">${esc(k.term)}</span>`;
+  }
+
+  el.innerHTML = `
+    <div class="n-actions">
+      <div class="nact act-add" title="添加子女">＋</div>
+      <div class="nact act-edit" title="编辑">✎</div>
+    </div>
+    ${hiddenCount > 0 ? `<div class="n-col-badge act-toggle" title="展开支系">${hiddenCount}<span style="margin-left:2px">▸</span></div>` : ''}
+    <div class="n-name">
+      <span class="dot ${p.gender}" style="width:8px;height:8px"></span>
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name || '未命名')}</span>
+      ${state.egoId === p.id ? '<span class="n-ego-badge">我</span>' : ''}
+    </div>
+    <div class="n-meta">第 ${p.gen ?? 0} 辈${p.order ? ` · 排行${p.order}` : ''}</div>
+    ${termBadge}
+  `;
+
+  el.addEventListener('dblclick', ev => {
+    ev.stopPropagation();
+    state.egoId = p.id;
+    save(); renderAll();
+    toast(`已将「${p.name}」设为称谓基准`);
+  });
+  el.querySelector('.act-edit').addEventListener('click', ev => {
+    ev.stopPropagation(); openEditor(p.id);
+  });
+  const addBtn = el.querySelector('.act-add');
+  addBtn.addEventListener('click', ev => {
+    ev.stopPropagation();
+    quickAddChild(p);
+  });
+  const tog = el.querySelector('.act-toggle');
+  if (tog) tog.addEventListener('click', ev => {
+    ev.stopPropagation();
+    delete state.collapsed[p.id];
+    save(); renderAll();
+  });
+
+  attachNodeDrag(el, p);
+  return el;
+}
+
+/* ---------------- 节点拖拽 ---------------- */
+function attachNodeDrag(el, p) {
+  let sx, sy, ox, oy, dragging = false, moved = false;
+  el.addEventListener('pointerdown', ev => {
+    if (ev.target.closest('.nact') || ev.target.closest('.n-col-badge')) return;
+    if (ev.button !== 0) return;
+    ev.stopPropagation();
+    dragging = true; moved = false;
+    sx = ev.clientX; sy = ev.clientY; ox = p.x ?? 0; oy = p.y ?? 0;
+    el.setPointerCapture(ev.pointerId);
+  });
+  el.addEventListener('pointermove', ev => {
+    if (!dragging) return;
+    const dx = (ev.clientX - sx) / state.view.k;
+    const dy = (ev.clientY - sy) / state.view.k;
+    if (Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) > 4) moved = true;
+    p.x = ox + dx; p.y = oy + dy;
+    el.style.left = p.x + 'px';
+    el.style.top = p.y + 'px';
+    // 局部更新连线
+    refreshEdgesFor(p.id);
+  });
+  const end = ev => {
+    if (!dragging) return;
+    dragging = false;
+    if (moved) save();
+    if (!moved) selectPerson(p.id);
+  };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
+}
+
+function refreshEdgesFor(id) {
+  // 数量级小，拖拽中整体重绘边（含配偶虚线）
+  edgeLayer.innerHTML = '';
+  const hiddenSet = hiddenByCollapse();
+  const drawn = new Set(), coupleDrawn = new Set();
+  for (const p of state.people) {
+    if (!isVisible(p, hiddenSet)) continue;
+    for (const par of [p.fatherId, p.motherId]) {
+      if (!par) continue;
+      const parent = byId(par);
+      if (!parent || !isVisible(parent, hiddenSet)) continue;
+      const key = par + '->' + p.id;
+      if (drawn.has(key)) continue;
+      drawn.add(key);
+      edgeLayer.appendChild(buildEdge(parent, p));
+    }
+    const sp = spouseOf(p.id);
+    if (sp && isVisible(sp, hiddenSet)) {
+      const key = [p.id, sp.id].sort().join('~');
+      if (!coupleDrawn.has(key)) { coupleDrawn.add(key); edgeLayer.appendChild(buildSpouseEdge(p, sp)); }
+    }
+  }
+}
+
+function selectPerson(id) {
+  state.selectedId = id;
+  state.editingId = id;
+  state.tab = 'people';
+  renderAll();
+}
+
+/* ---------------- 画布平移/缩放 ---------------- */
+let panState = null;
+canvasWrap.addEventListener('pointerdown', ev => {
+  if (ev.target.closest('.node')) return;
+  panState = { sx: ev.clientX, sy: ev.clientY, ox: state.view.x, oy: state.view.y };
+  canvasWrap.classList.add('panning');
+  canvasWrap.setPointerCapture(ev.pointerId);
+  if (ev.target === canvasWrap || ev.target.id === 'viewport' || ev.target.id === 'edgeLayer') {
+    state.selectedId = null;
+    renderAll();
+  }
+});
+canvasWrap.addEventListener('pointermove', ev => {
+  if (!panState) return;
+  state.view.x = panState.ox + (ev.clientX - panState.sx);
+  state.view.y = panState.oy + (ev.clientY - panState.sy);
+  applyView();
+});
+canvasWrap.addEventListener('pointerup', () => { panState = null; canvasWrap.classList.remove('panning'); });
+canvasWrap.addEventListener('pointercancel', () => { panState = null; canvasWrap.classList.remove('panning'); });
+
+canvasWrap.addEventListener('wheel', ev => {
+  ev.preventDefault();
+  const rect = canvasWrap.getBoundingClientRect();
+  const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+  const oldK = state.view.k;
+  const factor = ev.deltaY < 0 ? 1.12 : 1 / 1.12;
+  const k = Math.min(2.2, Math.max(0.25, oldK * factor));
+  // 以鼠标为锚缩放
+  state.view.x = mx - (mx - state.view.x) * (k / oldK);
+  state.view.y = my - (my - state.view.y) * (k / oldK);
+  state.view.k = k;
+  applyView();
+  save();
+}, { passive: false });
+
+function zoomBy(f) {
+  const rect = canvasWrap.getBoundingClientRect();
+  const mx = rect.width / 2, my = rect.height / 2;
+  const oldK = state.view.k, k = Math.min(2.2, Math.max(0.25, oldK * f));
+  state.view.x = mx - (mx - state.view.x) * (k / oldK);
+  state.view.y = my - (my - state.view.y) * (k / oldK);
+  state.view.k = k;
+  applyView(); save();
+};
+function fitView(pad = 60) {
+  const hiddenSet = hiddenByCollapse();
+  const vis = state.people.filter(p => isVisible(p, hiddenSet));
+  if (!vis.length) { state.view = { x: 60, y: 40, k: 1 }; applyView(); return; }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of vis) {
+    minX = Math.min(minX, p.x ?? 0); minY = Math.min(minY, p.y ?? 0);
+    maxX = Math.max(maxX, (p.x ?? 0) + NODE_W); maxY = Math.max(maxY, (p.y ?? 0) + NODE_H);
+  }
+  const rect = canvasWrap.getBoundingClientRect();
+  const k = Math.min(1.5, Math.max(0.25,
+    Math.min((rect.width - pad * 2) / (maxX - minX), (rect.height - pad * 2) / (maxY - minY))));
+  state.view.k = k;
+  state.view.x = (rect.width - (maxX - minX) * k) / 2 - minX * k;
+  state.view.y = (rect.height - (maxY - minY) * k) / 2 - minY * k;
+  applyView(); save();
+}
+
+/* =====================================================================
+ * 自动布局：按支系 BFS 排列，辈分决定纵坐标
+ * ===================================================================== */
+function autoLayout() {
+  const rs = roots();
+  if (!rs.length) {
+    state.people.forEach((p, i) => { p.x = 60 + i * 180; p.y = 60; });
+    renderCanvas(); return;
+  }
+  let cursorX = 40;
+  const topY = 40;
+  const placed = new Set(); // 跨支系共享，避免配偶被两支重复放置
+  for (const r of rs) {
+    if (placed.has(r.id)) continue;
+    const res = layoutFamily(r, null, cursorX, topY, placed);
+    cursorX = res.maxX + 110;
+  }
+  // 兜底：任何未被布局覆盖的（环中的孤立成员）
+  let fx = cursorX;
+  for (const p of state.people) {
+    if (!placed.has(p.id)) { p.x = fx; p.y = topY; fx += NODE_W + SIB_GAP; }
+  }
+  save();
+  renderCanvas();
+  setTimeout(() => fitView(), 30);
+}
+
+const COUPLE_GAP = 26;  // 配偶之间
+const SIB_X = NODE_W + SIB_GAP;
+
+/**
+ * 以“核心家庭”为单元递归布局。
+ * head：本家庭的血亲代表；parentSpouse：head 的配偶（上一代引入，不再重复放置）。
+ * 自底向上计算子树宽度并居中。
+ */
+/** 本次布局中 head 应同层放置的配偶（有父母的配偶归属其本家，不重复占位） */
+function layoutSpouseOf(head, placed) {
+  const sp = spouseOf(head.id);
+  if (!sp || placed.has(sp.id)) return null;
+  const spHomeless = !sp.fatherId && !sp.motherId;
+  const headHomeless = !head.fatherId && !head.motherId;
+  if (spHomeless || headHomeless) return sp;
+  return null;
+}
+
+function layoutFamily(head, parentSpouse, startX, topY, placed) {
+  if (!head || placed.has(head.id)) return { maxX: startX };
+  placed.add(head.id);
+
+  // head 的配偶放同一层
+  let spouse = layoutSpouseOf(head, placed);
+  if (spouse) placed.add(spouse.id);
+
+  // 以 head（及配偶）为父母的子女，按出生顺序
+  const kids = state.people
+    .filter(c => c.fatherId === head.id || c.motherId === head.id
+      || (spouse && (c.fatherId === spouse.id || c.motherId === spouse.id)))
+    .sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
+  const uniqKids = [];
+  for (const k of kids) if (!uniqKids.includes(k)) uniqKids.push(k);
+
+  // 先递归排子女家庭，累计宽度
+  const blocks = [];
+  let totalW = 0;
+  for (const k of uniqKids) {
+    const subW = measureFamily(k, placed);
+    const begin = startX + totalW;
+    const res = layoutFamily(k, null, begin, topY + GEN_GAP, placed);
+    blocks.push({ kid: k, x: begin, w: subW, maxX: res.maxX });
+    totalW += subW + (blocks.length > 1 ? SIB_GAP : 0);
+  }
+
+  // 本层夫妇占据宽度
+  const selfW = spouse ? NODE_W * 2 + COUPLE_GAP : NODE_W;
+  const blockW = Math.max(selfW, totalW);
+  const baseX = startX + (blockW - selfW) / 2;
+  head.x = baseX;
+  head.y = topY;
+  if (spouse) {
+    spouse.x = baseX + NODE_W + COUPLE_GAP;
+    spouse.y = topY;
+  }
+
+  let maxX = startX + blockW;
+  for (const b of blocks) maxX = Math.max(maxX, b.maxX);
+  return { maxX };
+}
+
+/** 只测量家庭子树宽度（用于父代居中），不写坐标；placed 与主布局共享 */
+function measureFamily(head, placedGlobal) {
+  const local = new Set();
+  const walk = (h) => {
+    if (local.has(h.id)) return 0;
+    local.add(h.id);
+    const spouse = layoutSpouseOf(h, new Set([...local, ...placedGlobal]));
+    if (spouse) local.add(spouse.id);
+    const kids = state.people
+      .filter(c => c.fatherId === h.id || c.motherId === h.id
+        || (spouse && (c.fatherId === spouse.id || c.motherId === spouse.id)))
+      .sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
+    const uniq = [];
+    for (const k of kids) if (!uniq.includes(k)) uniq.push(k);
+    let kidsW = 0;
+    uniq.forEach((k, i) => {
+      if (i > 0) kidsW += SIB_GAP;
+      kidsW += walk(k);
+    });
+    const selfW = spouse ? NODE_W * 2 + COUPLE_GAP : NODE_W;
+    return Math.max(selfW, kidsW);
+  };
+  return walk(head);
+}
+
+/* =====================================================================
+ * 侧栏：人物 / 支系 / 称谓演算
+ * ===================================================================== */
+const sideBody = document.getElementById('sideBody');
+
+function renderSidebar() {
+  document.querySelectorAll('#tabs .tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === state.tab);
+  });
+  if (state.tab === 'people') renderPeopleTab();
+  else if (state.tab === 'branches') renderBranchesTab();
+  else renderKinTab();
+}
+
+function renderPeopleTab() {
+  const sorted = [...state.people].sort((a, b) =>
+    (a.gen ?? 0) - (b.gen ?? 0) || (a.order ?? 0) - (b.order ?? 0) || (a.name > b.name ? 1 : -1));
+  let rows = sorted.map(p => {
+    const parNames = parentsOf(p).map(x => x.name || '?').join(' / ');
+    return `<div class="person-row${state.selectedId === p.id ? ' selected' : ''}" data-id="${p.id}">
+      <span class="dot ${p.gender}"></span>
+      <div style="flex:1;min-width:0">
+        <div class="p-name">${esc(p.name || '未命名')} ${state.egoId === p.id ? '<span style="color:var(--ok);font-size:10px">[基准]</span>' : ''}</div>
+        <div class="p-sub">第${p.gen ?? 0}辈${parNames ? ' · 父母：' + esc(parNames) : ''}</div>
+      </div>
+    </div>`;
+  }).join('');
+  sideBody.innerHTML = `
+    <div class="legend">
+      <span><i class="dot male" style="display:inline-block"></i>男</span>
+      <span><i class="dot female" style="display:inline-block"></i>女</span>
+      <span>共 ${state.people.length} 人 · ${roots().length} 个支系</span>
+    </div>
+    <div class="section-title">人物列表 <span class="hint">点击行编辑</span></div>
+    ${rows || '<div style="color:var(--ink-3);padding:20px 4px">暂无人物，点击「＋ 添加人物」。</div>'}
+  `;
+  sideBody.querySelectorAll('.person-row').forEach(r => {
+    r.addEventListener('click', () => openEditor(r.dataset.id));
+  });
+}
+
+function renderBranchesTab() {
+  const rs = roots();
+  if (!rs.length) {
+    sideBody.innerHTML = '<div style="color:var(--ink-3);padding:20px 4px">暂无人物。</div>';
+    return;
+  }
+  const cards = rs.map(r => {
+    const all = branchMembers(r.id);
+    const isCol = !!state.collapsed[r.id];
+    const spouseIds = new Set();
+    // 标注哪些是“配偶（无父母录入）”
+    for (const m of all) {
+      if (m.id === r.id) continue;
+      if (!m.fatherId && !m.motherId) spouseIds.add(m.id);
+    }
+    const members = all.slice(1).sort((a, b) => (a.gen ?? 0) - (b.gen ?? 0) || (a.order ?? 0) - (b.order ?? 0));
+    const mRows = members.map(m => `
+      <div class="branch-member" data-id="${m.id}">
+        <span class="dot ${m.gender}" style="width:8px;height:8px"></span>
+        <span class="p-name">${esc(m.name || '未命名')}</span>
+        ${spouseIds.has(m.id) ? '<span style="color:#c2410c;font-size:10px">配偶</span>' : `<span style="color:var(--ink-3);font-size:10px">第${m.gen ?? 0}辈</span>`}
+      </div>`).join('');
+    return `<div class="branch-card${isCol ? '' : ' open'}">
+      <div class="branch-head" data-id="${r.id}">
+        <span class="caret">▶</span>
+        <span class="dot ${r.gender}"></span>
+        <span class="b-name">${esc(r.name || '未命名')} 支</span>
+        <span class="b-count">${all.length} 人</span>
+        <button class="btn btn-mini" style="padding:2px 8px" data-act="${isCol ? 'expand' : 'collapse'}" data-id="${r.id}">${isCol ? '展开' : '折叠'}</button>
+      </div>
+      <div class="branch-members">
+        <div class="branch-member" data-id="${r.id}">
+          <span class="dot ${r.gender}" style="width:8px;height:8px"></span>
+          <span class="p-name">${esc(r.name || '未命名')}（始祖）</span>
+        </div>
+        ${mRows}
+      </div>
+    </div>`;
+  }).join('');
+  sideBody.innerHTML = `
+    <div class="section-title">支系结构 <span class="hint">按无父母记录的始祖划分</span></div>
+    ${cards}
+  `;
+  sideBody.querySelectorAll('.branch-head').forEach(h => {
+    h.addEventListener('click', ev => {
+      if (ev.target.dataset.act) {
+        ev.stopPropagation();
+        const id = ev.target.dataset.id;
+        if (ev.target.dataset.act === 'collapse') state.collapsed[id] = true;
+        else delete state.collapsed[id];
+        save(); renderAll();
+        return;
+      }
+      openEditor(h.dataset.id);
+    });
+  });
+  sideBody.querySelectorAll('.branch-member').forEach(m => {
+    m.addEventListener('click', () => openEditor(m.dataset.id));
+  });
+}
+
+function renderKinTab() {
+  if (!state.egoId) {
+    sideBody.innerHTML = `<div class="editor-empty">
+      先在画布上<b>双击</b>任意人物节点，将其设为称谓基准（“我”），<br>
+      系统会按已有父母关系推导所有人与 TA 的基础称谓。<br><br>
+      <span class="mini-link" id="pickEgo">选择第一位人物作为基准 →</span>
+    </div>`;
+    const link = sideBody.querySelector('#pickEgo');
+    if (link) link.addEventListener('click', () => {
+      if (state.people[0]) { state.egoId = state.people[0].id; save(); renderAll(); }
+    });
+    return;
+  }
+  const ego = byId(state.egoId);
+  const others = state.people.filter(p => p.id !== state.egoId)
+    .sort((a, b) => (a.gen ?? 0) - (b.gen ?? 0) || (a.order ?? 0) - (b.order ?? 0));
+
+  const rows = others.map(t => {
+    const k = displayKinship(state.egoId, t.id);
+    const key = state.egoId + '>>' + t.id;
+    const editing = state._kinEdit === key;
+    const custom = state.customTerms[key] || {};
+    return `<div class="kin-row${editing ? ' editing' : ''}" data-key="${esc(key)}" data-tid="${t.id}">
+      <div class="kr-top">
+        <span class="dot ${t.gender}"></span>
+        <span class="kr-target" data-jump="${t.id}" title="在画布中定位">${esc(t.name || '未命名')}</span>
+        <span class="kr-tag tag-${k.tag}">${k.tag}</span>
+        <span class="kr-term ${k.custom ? 'custom' : ''}">${esc(k.term)}</span>
+      </div>
+      ${k.detail ? `<div class="kr-detail">${esc(k.detail)}</div>` : ''}
+      ${k.placeholder && !k.custom ? '<div class="kr-detail" style="color:var(--warn)">推导占位称谓，可按家族习惯手工修正</div>' : ''}
+      ${custom.note ? `<div class="kr-note-preview">📝 ${esc(custom.note)}</div>` : ''}
+      <div class="kr-edit">
+        <label style="font-size:11px;color:var(--ink-2)">自定义称谓（${esc(ego.name)} 称 ${esc(t.name)}）</label>
+        <input class="kr-term-input" placeholder="例如：二大爷、大表嫂" value="${esc(custom.term || '')}">
+        <textarea class="kr-notes" placeholder="备注：过继、干亲、称谓由来…">${esc(custom.note || '')}</textarea>
+        <div class="kr-btns">
+          <button class="btn primary" data-act="save">保存修正</button>
+          <button class="btn" data-act="reset">恢复推导</button>
+        </div>
+      </div>
+      ${!editing ? `<div class="kr-btns" style="margin-top:6px"><button class="btn" data-act="edit">✎ 修正称谓/备注</button></div>` : ''}
+    </div>`;
+  }).join('');
+
+  sideBody.innerHTML = `
+    <div class="section-title">
+      称谓演算 · 基准「${esc(ego.name)}」
+      <span class="hint mini-link" id="changeEgo">更换</span>
+    </div>
+    <div style="font-size:11px;color:var(--ink-3);margin-bottom:10px;line-height:1.6">
+      蓝色为系统推导，粉色为手工修正。称谓沿父系谱推导，母系连接（母→父母辈）会得到舅/姨及表亲。
+    </div>
+    ${rows || '<div style="color:var(--ink-3)">暂无其他人物。</div>'}
+  `;
+  sideBody.querySelector('#changeEgo').addEventListener('click', () => {
+    state.egoId = null; save(); renderAll();
+  });
+  sideBody.querySelectorAll('.kin-row').forEach(row => {
+    const key = row.dataset.key, tid = row.dataset.tid;
+    row.querySelector('.kr-target').addEventListener('click', () => {
+      revealNode(tid);
+      state.selectedId = tid;
+      renderCanvas();
+      panToNode(tid);
+    });
+    row.querySelectorAll('button[data-act]').forEach(b => {
+      b.addEventListener('click', () => {
+        const act = b.dataset.act;
+        if (act === 'edit') { state._kinEdit = key; renderSidebar(); }
+        else if (act === 'save') {
+          const term = row.querySelector('.kr-term-input').value.trim();
+          const note = row.querySelector('.kr-notes').value.trim();
+          if (term || note) state.customTerms[key] = { term, note };
+          else delete state.customTerms[key];
+          state._kinEdit = null; save(); renderAll();
+          toast('称谓已保存');
+        } else if (act === 'reset') {
+          delete state.customTerms[key];
+          state._kinEdit = null; save(); renderAll();
+        }
+      });
+    });
+  });
+}
+
+/** 确保节点可见：展开包含它的折叠支系、必要时重置辈分筛选 */
+function revealNode(id) {
+  const p = byId(id);
+  if (!p) return;
+  let changed = false;
+  for (const rootId of Object.keys(state.collapsed)) {
+    if (state.collapsed[rootId] && branchMembers(rootId).some(m => m.id === id)) {
+      delete state.collapsed[rootId]; changed = true;
+    }
+  }
+  if (state.genFilter !== 'all' && String(p.gen) !== String(state.genFilter)) {
+    state.genFilter = 'all'; changed = true;
+  }
+  if (changed) { renderGenFilter(); save(); }
+}
+
+function panToNode(id) {
+  const p = byId(id);
+  if (!p) return;
+  const rect = canvasWrap.getBoundingClientRect();
+  state.view.x = rect.width / 2 - (p.x + NODE_W / 2) * state.view.k;
+  state.view.y = rect.height / 2 - (p.y + NODE_H / 2) * state.view.k;
+  applyView(); save();
+}
+
+/* =====================================================================
+ * 人物编辑表单
+ * ===================================================================== */
+function openEditor(id) {
+  revealNode(id);
+  state.tab = 'people';
+  state.selectedId = id;
+  renderAll();
+  // 渲染后填充表单内容
+  renderEditorForm(id);
+}
+
+function renderEditorForm(id) {
+  const p = byId(id);
+  if (!p) { renderPeopleTab(); return; }
+  const forbidden = descendantSet(p.id); // 后代不能被选为父母（防环）
+  // 按性别过滤候选；当前已选但性别不符（旧数据）仍保留在列表中
+  const parentOptions = (kind) => {
+    const want = kind === 'father' ? 'male' : 'female';
+    const cur = kind === 'father' ? p.fatherId : p.motherId;
+    return state.people
+      .filter(x => x.id !== p.id && !forbidden.has(x.id)
+        && (x.gender === want || x.gender === 'unknown' || x.id === cur))
+      .map(x => `<option value="${x.id}" ${cur === x.id ? 'selected' : ''}>${esc(x.name || '未命名')}（${genderLabel(x.gender)} · 第${x.gen ?? 0}辈）</option>`).join('');
+  };
+
+  sideBody.innerHTML = `
+    <div class="section-title">
+      <span class="mini-link" id="backList">← 返回列表</span>
+      <span>编辑人物</span>
+    </div>
+    <div class="gen-warn" id="genWarn">⚠ 父母辈分不一致或与本人辈分冲突，请检查。</div>
+    <div class="field">
+      <label>姓名</label>
+      <input type="text" id="fName" value="${esc(p.name)}" placeholder="人物姓名">
+    </div>
+    <div class="field">
+      <label>性别</label>
+      <div class="seg" id="fGender">
+        ${GENDER.map(g => `<div class="opt ${p.gender === g.v ? 'on' : ''}" data-v="${g.v}">${g.label}</div>`).join('')}
+      </div>
+    </div>
+    <div class="field">
+      <label>辈分（数字，越大越晚辈；用于分层与筛选）</label>
+      <input type="number" id="fGen" value="${p.gen ?? 0}">
+    </div>
+    <div class="field">
+      <label>出生顺序（同辈排行，1 为长）</label>
+      <input type="number" id="fOrder" value="${p.order ?? ''}" min="1" placeholder="如 1、2、3">
+    </div>
+    <div class="field">
+      <label>父亲</label>
+      <select id="fFather"><option value="">— 未录入 —</option>${parentOptions('father')}</select>
+    </div>
+    <div class="field">
+      <label>母亲</label>
+      <select id="fMother"><option value="">— 未录入 —</option>${parentOptions('mother')}</select>
+    </div>
+    <div class="field">
+      <label>人物备注</label>
+      <textarea id="fNote" placeholder="生卒、字、籍贯、过继等说明">${esc(p.note || '')}</textarea>
+    </div>
+    <div class="form-actions">
+      <button class="btn primary" id="fSave">保存</button>
+      <button class="btn danger" id="fDelete">删除</button>
+    </div>
+  `;
+
+  let gender = p.gender;
+  sideBody.querySelectorAll('#fGender .opt').forEach(o => o.addEventListener('click', () => {
+    gender = o.dataset.v;
+    sideBody.querySelectorAll('#fGender .opt').forEach(x => x.classList.toggle('on', x === o));
+  }));
+  // 选择父母后自动建议辈分（父母最大辈分 +1），用户仍可手工修改
+  const suggestGen = () => {
+    const fv = sideBody.querySelector('#fFather').value;
+    const mv = sideBody.querySelector('#fMother').value;
+    const gs = [fv, mv].map(v => v ? byId(v)?.gen : null).filter(g => typeof g === 'number');
+    const warnEl = sideBody.querySelector('#genWarn');
+    if (gs.length === 2 && gs[0] !== gs[1]) {
+      warnEl.textContent = `⚠ 父母辈分不一致（第${gs[0]}辈 / 第${gs[1]}辈），请检查。`;
+      warnEl.style.display = 'block';
+    } else if (gs.length) {
+      const cur = parseInt(sideBody.querySelector('#fGen').value, 10);
+      const sug = Math.max(...gs) + 1;
+      if (isNaN(cur) || cur !== sug) {
+        // 仅当新建（原无父母）或当前值不合理时自动填，不覆盖用户显式值
+        if (!p.fatherId && !p.motherId || isNaN(cur) || cur <= Math.max(...gs)) {
+          sideBody.querySelector('#fGen').value = sug;
+        }
+      }
+      warnEl.style.display = 'none';
+    } else warnEl.style.display = 'none';
+  };
+  sideBody.querySelector('#fFather').addEventListener('change', suggestGen);
+  sideBody.querySelector('#fMother').addEventListener('change', suggestGen);
+  sideBody.querySelector('#backList').addEventListener('click', () => {
+    state.selectedId = null; renderAll();
+  });
+  sideBody.querySelector('#fSave').addEventListener('click', async () => {
+    // 辈分冲突二次确认
+    const fv = sideBody.querySelector('#fFather').value;
+    const mv = sideBody.querySelector('#fMother').value;
+    const genV = parseInt(sideBody.querySelector('#fGen').value, 10);
+    const pg = [fv, mv].map(v => v ? byId(v)?.gen : null).filter(g => typeof g === 'number');
+    if (pg.length && !isNaN(genV) && genV <= Math.max(...pg)) {
+      const ok = await confirmModal('辈分异常',
+        `该人物辈分（第${genV}辈）不晚于其父母（第${Math.max(...pg)}辈），子女通常应为父母下一辈。仍要保存吗？`);
+      if (!ok) return;
+    }
+    savePersonForm(p, gender);
+  });
+  sideBody.querySelector('#fDelete').addEventListener('click', async () => {
+    const kids = childrenOf(p.id);
+    const ok = await confirmModal('删除人物',
+      `确定删除「${p.name || '未命名'}」吗？${kids.length ? `其 ${kids.length} 个子女将变为无父/无母（不会被删除）。` : '此操作不可撤销。'}`);
+    if (!ok) return;
+    deletePerson(p.id);
+  });
+}
+
+function savePersonForm(p, gender) {
+  const name = sideBody.querySelector('#fName').value.trim();
+  const gen = parseInt(sideBody.querySelector('#fGen').value, 10);
+  const orderRaw = sideBody.querySelector('#fOrder').value.trim();
+  const order = orderRaw === '' ? null : parseInt(orderRaw, 10);
+  const fatherId = sideBody.querySelector('#fFather').value || null;
+  const motherId = sideBody.querySelector('#fMother').value || null;
+  const note = sideBody.querySelector('#fNote').value.trim();
+
+  if (!name) { toast('请填写姓名'); return; }
+  if (fatherId === motherId && fatherId) { toast('父亲和母亲不能是同一人'); return; }
+
+  // 辈分：父母存在时取较高者 +1；若用户显式填写且与父母平级或更高，给一次确认
+  let finalGen = isNaN(gen) ? 0 : gen;
+  const fp = fatherId ? byId(fatherId) : null;
+  const mp = motherId ? byId(motherId) : null;
+  const parentMax = [fp, mp].map(x => x?.gen).filter(g => typeof g === 'number');
+  if (parentMax.length) finalGen = isNaN(gen) ? Math.max(...parentMax) + 1 : gen;
+
+  Object.assign(p, {
+    name, gender, gen: finalGen,
+    order: isNaN(order) || order === null ? null : order,
+    fatherId, motherId, note,
+  });
+  save();
+  renderGenFilter();
+  renderAll();
+  toast('已保存');
+}
+
+function deletePerson(id) {
+  // 清除他人指向
+  state.people.forEach(x => {
+    if (x.fatherId === id) x.fatherId = null;
+    if (x.motherId === id) x.motherId = null;
+  });
+  state.people = state.people.filter(x => x.id !== id);
+  // 清理称谓修正
+  for (const key of Object.keys(state.customTerms)) {
+    const [a, b] = key.split('>>');
+    if (a === id || b === id) delete state.customTerms[key];
+  }
+  delete state.collapsed[id];
+  if (state.egoId === id) state.egoId = null;
+  state.selectedId = null;
+  save(); renderGenFilter(); renderAll();
+  toast('人物已删除');
+}
+
+function quickAddChild(parent) {
+  // 依据父母性别自动匹配另一方位置
+  const child = {
+    id: uid(), name: '', gen: (parent.gen ?? 0) + 1, gender: 'unknown',
+    order: childrenOf(parent.id).length + 1,
+    fatherId: parent.gender === 'male' ? parent.id : null,
+    motherId: parent.gender === 'female' ? parent.id : null,
+    note: '', x: (parent.x ?? 0) + 160, y: (parent.y ?? 0) + GEN_GAP,
+  };
+  // 若已知另一方家长，自动关联
+  const partner = spouseOf(parent.id);
+  if (partner) {
+    if (partner.gender === 'male' && !child.fatherId) child.fatherId = partner.id;
+    if (partner.gender === 'female' && !child.motherId) child.motherId = partner.id;
+  }
+  state.people.push(child);
+  save(); renderGenFilter();
+  openEditor(child.id);
+}
+
+/* =====================================================================
+ * 添加人物（空表单）
+ * ===================================================================== */
+function addPerson() {
+  const rect = canvasWrap.getBoundingClientRect();
+  const k = state.view.k;
+  const cx = (rect.width / 2 - state.view.x) / k - NODE_W / 2;
+  const cy = (rect.height / 2 - state.view.y) / k - NODE_H / 2;
+  const p = {
+    id: uid(), name: '', gen: 0, gender: 'unknown', order: null,
+    fatherId: null, motherId: null, note: '',
+    x: cx + (Math.random() * 60 - 30), y: cy + (Math.random() * 60 - 30),
+  };
+  state.people.push(p);
+  save();
+  renderGenFilter();
+  openEditor(p.id);
+}
+
+/* =====================================================================
+ * 辈分筛选
+ * ===================================================================== */
+function renderGenFilter() {
+  const sel = document.getElementById('genFilter');
+  const gens = [...new Set(state.people.map(p => p.gen ?? 0))].sort((a, b) => a - b);
+  const cur = state.genFilter;
+  sel.innerHTML = `<option value="all">全部辈分</option>` +
+    gens.map(g => `<option value="${g}" ${String(cur) === String(g) ? 'selected' : ''}>第 ${g} 辈</option>`).join('');
+}
+
+/* =====================================================================
+ * 导出 / 导入 / PNG
+ * ===================================================================== */
+function exportJSON() {
+  const data = {
+    app: 'family-kin-board',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    people: state.people,
+    customTerms: state.customTerms,
+    collapsed: state.collapsed,
+    egoId: state.egoId,
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `家谱数据_${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast('JSON 已导出');
+}
+
+function importJSON(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const d = JSON.parse(reader.result);
+      if (!Array.isArray(d.people)) throw new Error('格式不正确：缺少 people');
+      state.people = d.people.map(p => ({
+        id: p.id || uid(),
+        name: p.name || '',
+        gen: Number.isFinite(p.gen) ? p.gen : 0,
+        gender: ['male', 'female', 'unknown'].includes(p.gender) ? p.gender : 'unknown',
+        order: p.order ?? null,
+        fatherId: p.fatherId || null,
+        motherId: p.motherId || null,
+        note: p.note || '',
+        x: Number.isFinite(p.x) ? p.x : 40,
+        y: Number.isFinite(p.y) ? p.y : 40,
+      }));
+      state.customTerms = d.customTerms || {};
+      state.collapsed = d.collapsed || {};
+      state.egoId = d.egoId || null;
+      state.genFilter = 'all';
+      // 清理悬空引用
+      const ids = new Set(state.people.map(p => p.id));
+      state.people.forEach(p => {
+        if (p.fatherId && !ids.has(p.fatherId)) p.fatherId = null;
+        if (p.motherId && !ids.has(p.motherId)) p.motherId = null;
+      });
+      save(); renderGenFilter(); renderAll(); fitView();
+      toast(`导入成功：${state.people.length} 位人物`);
+    } catch (e) {
+      toast('导入失败：' + e.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+/* ---------- PNG：Canvas 手工绘制当前视图 ---------- */
+async function exportPNG() {
+  const hiddenSet = hiddenByCollapse();
+  const vis = state.people.filter(p => isVisible(p, hiddenSet));
+  if (!vis.length) { toast('没有可导出的人物'); return; }
+  toast('正在生成 PNG…');
+  const visIds = new Set(vis.map(p => p.id));
+
+  const pad = 70;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of vis) {
+    minX = Math.min(minX, p.x ?? 0); minY = Math.min(minY, p.y ?? 0);
+    maxX = Math.max(maxX, (p.x ?? 0) + NODE_W); maxY = Math.max(maxY, (p.y ?? 0) + NODE_H);
+  }
+  const W = (maxX - minX) + pad * 2;
+  const H = (maxY - minY) + pad * 2 + 44; // 顶部标题空间
+  const scale = 2;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = W * scale; canvas.height = H * scale;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(scale, scale);
+
+  // 背景
+  ctx.fillStyle = '#f4f6fa';
+  ctx.fillRect(0, 0, W, H);
+
+  // 标题
+  ctx.fillStyle = '#1f2937';
+  ctx.font = 'bold 16px "PingFang SC","Microsoft YaHei",sans-serif';
+  ctx.fillText(`家族关系图${state.egoId ? `（称谓基准：${byId(state.egoId)?.name || ''}）` : ''}`, pad, 30);
+  ctx.fillStyle = '#9ca3af';
+  ctx.font = '11px sans-serif';
+  ctx.fillText(new Date().toLocaleString('zh-CN') + ` · 共 ${vis.length} 人`, pad, 48);
+
+  const ox = pad - minX, oy = pad + 44 - minY;
+  const tx = p => p * 1 + 0;
+
+  // 先画亲子边
+  ctx.lineWidth = 1.6;
+  const drawn = new Set();
+  for (const p of vis) {
+    for (const par of [p.fatherId, p.motherId]) {
+      if (!par) continue;
+      const parent = byId(par);
+      if (!parent || !visIds.has(parent.id)) continue;
+      const key = par + '->' + p.id;
+      if (drawn.has(key)) continue;
+      drawn.add(key);
+      const x1 = (parent.x ?? 0) + NODE_W / 2 + ox;
+      const y1 = (parent.y ?? 0) + NODE_H - 6 + oy;
+      const x2 = (p.x ?? 0) + NODE_W / 2 + ox;
+      const y2 = (p.y ?? 0) + 8 + oy;
+      const my = (y1 + y2) / 2;
+      ctx.strokeStyle = '#b9c3d4';
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.bezierCurveTo(x1, my, x2, my, x2, y2);
+      ctx.stroke();
+    }
+  }
+  // 配偶虚线
+  const coupleDrawn = new Set();
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.lineWidth = 1.2;
+  for (const p of vis) {
+    const sp = spouseOf(p.id);
+    if (!sp || !visIds.has(sp.id)) continue;
+    const key = [p.id, sp.id].sort().join('~');
+    if (coupleDrawn.has(key)) continue;
+    coupleDrawn.add(key);
+    const x1 = (p.x ?? 0) + NODE_W + ox, y1 = (p.y ?? 0) + NODE_H / 2 + oy;
+    const x2 = (sp.x ?? 0) + ox, y2 = (sp.y ?? 0) + NODE_H / 2 + oy;
+    ctx.beginPath();
+    ctx.moveTo(Math.min(x1, x2), y1);
+    ctx.lineTo(Math.max(x1, x2), y2);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  // 再画节点
+  const roundRect = (c, x, y, w, h, r) => {
+    c.beginPath();
+    c.moveTo(x + r, y);
+    c.arcTo(x + w, y, x + w, y + h, r);
+    c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r);
+    c.arcTo(x, y, x + w, y, r);
+    c.closePath();
+  };
+  for (const p of vis) {
+    const x = (p.x ?? 0) + ox, y = (p.y ?? 0) + oy;
+    // 卡片
+    ctx.shadowColor = 'rgba(31,41,55,.12)';
+    ctx.shadowBlur = 8; ctx.shadowOffsetY = 3;
+    ctx.fillStyle = '#ffffff';
+    roundRect(ctx, x, y, NODE_W, NODE_H, 10); ctx.fill();
+    ctx.shadowColor = 'transparent';
+    // 顶条
+    const topColor = p.gender === 'male' ? '#2563eb' : p.gender === 'female' ? '#db2777' : '#6b7280';
+    ctx.fillStyle = topColor;
+    roundRect(ctx, x, y, NODE_W, NODE_H, 10); ctx.save(); ctx.clip();
+    ctx.fillRect(x, y, NODE_W, 3);
+    ctx.restore();
+    ctx.strokeStyle = state.egoId === p.id ? '#059669' : '#e5e7eb';
+    ctx.lineWidth = state.egoId === p.id ? 2 : 1;
+    roundRect(ctx, x, y, NODE_W, NODE_H, 10); ctx.stroke();
+
+    // 圆点
+    ctx.fillStyle = topColor;
+    ctx.beginPath(); ctx.arc(x + 13, y + 20, 4, 0, Math.PI * 2); ctx.fill();
+    // 姓名
+    ctx.fillStyle = '#1f2937';
+    ctx.font = 'bold 13px "PingFang SC","Microsoft YaHei",sans-serif';
+    let nm = p.name || '未命名';
+    if (ctx.measureText(nm).width > 84) {
+      while (nm.length > 1 && ctx.measureText(nm + '…').width > 84) nm = nm.slice(0, -1);
+      nm += '…';
+    }
+    ctx.fillText(nm, x + 22, y + 24);
+    if (state.egoId === p.id) {
+      ctx.fillStyle = '#059669';
+      roundRect(ctx, x + 22 + ctx.measureText(nm).width + 5, y + 12, 18, 13, 6); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = '9px sans-serif';
+      ctx.fillText('我', x + 22 + ctx.measureText(nm).width + 10, y + 22);
+    }
+    // 元信息
+    ctx.fillStyle = '#9ca3af';
+    ctx.font = '10px "PingFang SC","Microsoft YaHei",sans-serif';
+    ctx.fillText(`第${p.gen ?? 0}辈${p.order ? '·排行' + p.order : ''}`, x + 12, y + 42);
+    // 称谓
+    if (state.egoId && state.egoId !== p.id) {
+      const k = displayKinship(state.egoId, p.id);
+      if (k && k.tag !== '无关联') {
+        ctx.font = 'bold 11px "PingFang SC","Microsoft YaHei",sans-serif';
+        const tw = Math.min(108, ctx.measureText(k.term).width + 14);
+        ctx.fillStyle = k.custom ? '#fce7f3' : '#dbeafe';
+        roundRect(ctx, x + 10, y + 50, tw, 19, 5); ctx.fill();
+        ctx.fillStyle = k.custom ? '#be185d' : '#1d4ed8';
+        ctx.fillText(k.term, x + 17, y + 63);
+      }
+    }
+    // 折叠计数（与画布一致：支系成员除自身外的数量）
+    const hc = state.collapsed[p.id] ? branchMembers(p.id).length - 1 : 0;
+    if (hc > 0) {
+      ctx.fillStyle = '#4b5563';
+      ctx.beginPath(); ctx.arc(x + NODE_W - 8, y - 6, 10, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 10px sans-serif';
+      ctx.textAlign = 'center'; ctx.fillText(hc, x + NODE_W - 8, y - 2); ctx.textAlign = 'left';
+    }
+  }
+
+  // 图例
+  ctx.font = '11px "PingFang SC","Microsoft YaHei",sans-serif';
+  const legends = [['#2563eb', '男'], ['#db2777', '女'], ['#059669', '称谓基准']];
+  let lx = W - pad - 150;
+  ctx.fillStyle = '#6b7280';
+  ctx.fillText('图例：', lx, H - 26);
+  lx += 36;
+  for (const [c, t] of legends) {
+    ctx.fillStyle = c; ctx.beginPath(); ctx.arc(lx, H - 30, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#6b7280'; ctx.fillText(t, lx + 7, H - 26);
+    lx += 46;
+  }
+
+  try {
+    const url = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `家族关系图_${new Date().toISOString().slice(0, 10)}.png`;
+    a.click();
+    toast('PNG 已导出');
+  } catch (e) { toast('PNG 导出失败：' + e.message); }
+}
+
+/* =====================================================================
+ * 示例数据
+ * ===================================================================== */
+function buildSample() {
+  const mk = (name, gen, gender, order, fatherId = null, motherId = null, dx = 0, dy = 0) => ({
+    id: uid(), name, gen, gender, order, fatherId, motherId, note: '', x: dx, y: dy,
+  });
+  const people = [];
+  const g1 = mk('李守仁', 1, 'male', 1, null, null, 0, 0);
+  const g1w = mk('王秀兰', 1, 'female', 1, null, null, 0, 0);
+  people.push(g1, g1w);
+  const g2a = mk('李建国', 2, 'male', 1, g1.id, g1w.id);
+  const g2b = mk('李建华', 2, 'male', 2, g1.id, g1w.id);
+  const g2c = mk('李建梅', 2, 'female', 3, g1.id, g1w.id);
+  const g2w = mk('赵淑芬', 2, 'female', 1, null, null);
+  people.push(g2a, g2b, g2c, g2w);
+  const g3a = mk('李文', 3, 'male', 1, g2a.id, g2w.id);
+  const g3b = mk('李武', 3, 'male', 1, g2b.id, null);
+  const g3c = mk('赵磊', 3, 'male', 1, null, null); // 李建梅之子 -> 姑表
+  g3c.motherId = g2c.id;
+  people.push(g3a, g3b, g3c);
+  const g4 = mk('李思齐', 4, 'male', 1, g3a.id, null);
+  people.push(g4);
+  return people;
+}
+async function loadSample(force) {
+  if (state.people.length && !force) {
+    const ok = await confirmModal('载入示例', '载入示例将覆盖当前画布上的全部数据，确定继续吗？');
+    if (!ok) return;
+  }
+  state.people = buildSample();
+  state.customTerms = {};
+  state.collapsed = {};
+  state.egoId = state.people.find(p => p.name === '李文')?.id || null;
+  state.genFilter = 'all';
+  autoLayout();
+  save();
+  renderGenFilter();
+  renderAll();
+  toast('示例已载入：双击节点可更换称谓基准');
+}
+
+/* =====================================================================
+ * 统一渲染
+ * ===================================================================== */
+function renderAll() {
+  renderGenFilter();
+  renderCanvas();
+  renderSidebar();
+  syncEgoChip();
+}
+
+function syncEgoChip() {
+  const chip = document.getElementById('egoChip');
+  const ego = state.egoId ? byId(state.egoId) : null;
+  chip.style.display = ego ? 'flex' : 'none';
+  if (ego) document.getElementById('egoName').textContent = ego.name || '未命名';
+}
+
+/* =====================================================================
+ * 事件绑定 & 启动
+ * ===================================================================== */
+document.getElementById('btnAdd').addEventListener('click', addPerson);
+document.getElementById('btnLayout').addEventListener('click', () => { autoLayout(); });
+document.getElementById('btnFit').addEventListener('click', () => fitView());
+document.getElementById('btnZoomIn').addEventListener('click', () => zoomBy(1.15));
+document.getElementById('btnZoomOut').addEventListener('click', () => zoomBy(1 / 1.15));
+document.getElementById('btnExportJson').addEventListener('click', exportJSON);
+document.getElementById('btnExportPng').addEventListener('click', exportPNG);
+document.getElementById('btnSample').addEventListener('click', () => loadSample(false));
+document.getElementById('btnImportJson').addEventListener('click', () => document.getElementById('fileInput').click());
+document.getElementById('fileInput').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (f) importJSON(f);
+  e.target.value = '';
+});
+document.getElementById('genFilter').addEventListener('change', e => {
+  state.genFilter = e.target.value; save(); renderCanvas();
+});
+document.querySelectorAll('#tabs .tab').forEach(t => {
+  t.addEventListener('click', () => { state.tab = t.dataset.tab; state._kinEdit = null; renderSidebar(); });
+});
+document.getElementById('egoClear').addEventListener('click', () => {
+  state.egoId = null; save(); renderAll();
+});
+document.getElementById('btnClear').addEventListener('click', async () => {
+  if (!state.people.length) { toast('画布已是空的'); return; }
+  const ok = await confirmModal('清空全部数据', '将删除所有人物、称谓修正与布局，且无法恢复。确定吗？');
+  if (!ok) return;
+  state.people = []; state.customTerms = {}; state.collapsed = {};
+  state.egoId = null; state.selectedId = null; state.genFilter = 'all';
+  localStorage.removeItem(STORAGE_KEY);
+  renderGenFilter(); renderAll();
+  toast('已清空');
+});
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { state.selectedId = null; state._kinEdit = null; renderAll(); }
+});
+
+(function init() {
+  const has = load();
+  renderGenFilter();
+  renderAll();
+  if (has) {
+    // 恢复视口
+    applyView();
+  } else {
+    // 首次使用：静默准备空画布，显示引导
+    applyView();
+  }
+})();
+</script>
+</body>
+</html>
