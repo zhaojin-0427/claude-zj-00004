@@ -181,6 +181,8 @@
     transition: box-shadow .12s, border-color .12s;
   }
   .node:active { cursor: grabbing; }
+  .node.draft { border-style: dashed; opacity: .92; background: #fbfdff; }
+  .node.draft.male, .node.draft.female, .node.draft.unknown { border-top-style: dashed; }
   .node.male { border-top: 3px solid var(--male); }
   .node.female { border-top: 3px solid var(--female); }
   .node.unknown { border-top: 3px solid var(--unknown); }
@@ -379,6 +381,7 @@ let state = {
   tab: 'people',
   selectedId: null,
   editingId: null,
+  draft: null,   // 尚未保存的新建人物（保存前不入 people / localStorage）
 };
 
 function save() {
@@ -570,8 +573,9 @@ function collateralSeniority(ego, target, pathA, pathB, a, b) {
  * 按 (上溯步数 a, 下行步数 b) 推导汉语基础称谓。
  * 结果: { term, tag, detail(路径说明), placeholder(是否占位待修正) }
  * ===================================================================== */
-function elderSuffix(sen) { return sen > 0 ? '兄' : sen < 0 ? '弟' : '兄弟'; }
-function femaleElderSuffix(sen) { return sen > 0 ? '姐' : sen < 0 ? '妹' : '姐妹'; }
+// sen>0：我为长，对方偏幼 → 称“弟/妹”；sen<0：我偏幼，对方为长 → 称“兄/姐”
+function elderSuffix(sen) { return sen > 0 ? '弟' : sen < 0 ? '兄' : '兄弟'; }
+function femaleElderSuffix(sen) { return sen > 0 ? '妹' : sen < 0 ? '姐' : '姐妹'; }
 
 /** 找到 from 向上到 ancestorId 的路径上，紧邻 from 的第一步父/母节点 */
 function firstStep(from, ancestorId, prev) {
@@ -797,6 +801,16 @@ function renderCanvas() {
     if (!isVisible(p, hiddenSet)) continue;
     nodeLayer.appendChild(buildNode(p, hiddenSet));
   }
+  // 草稿节点（尚未保存的新建人物）
+  if (state.draft) {
+    const d = state.draft;
+    for (const par of [d.fatherId, d.motherId]) {
+      if (!par) continue;
+      const parent = byId(par);
+      if (parent && isVisible(parent, hiddenSet)) edgeLayer.appendChild(buildEdge(parent, d));
+    }
+    nodeLayer.appendChild(buildNode(d, hiddenSet, true));
+  }
   applyView();
 }
 
@@ -824,18 +838,18 @@ function buildSpouseEdge(a, b) {
   return line;
 }
 
-function buildNode(p, hiddenSet) {
+function buildNode(p, hiddenSet, isDraft = false) {
   const el = document.createElement('div');
-  el.className = `node ${p.gender}${state.selectedId === p.id ? ' selected' : ''}${state.egoId === p.id ? ' is-ego' : ''}`;
+  el.className = `node ${p.gender}${state.selectedId === p.id ? ' selected' : ''}${state.egoId === p.id ? ' is-ego' : ''}${isDraft ? ' draft' : ''}`;
   el.style.left = (p.x ?? 0) + 'px';
   el.style.top = (p.y ?? 0) + 'px';
   el.dataset.id = p.id;
 
-  const collapsedHere = !!state.collapsed[p.id];
+  const collapsedHere = !isDraft && !!state.collapsed[p.id];
   const hiddenCount = collapsedHere
     ? branchMembers(p.id).filter(m => m.id !== p.id).length : 0;
   let termBadge = '';
-  if (state.egoId && state.egoId !== p.id) {
+  if (!isDraft && state.egoId && state.egoId !== p.id) {
     const ego = byId(state.egoId);
     const k = ego ? displayKinship(state.egoId, p.id) : null;
     if (k && k.tag !== '无关联') termBadge = `<span class="n-term${k.custom ? ' custom' : ''}" title="${esc(k.term)}${k.placeholder ? '（推导占位，可手工修正）' : ''}">${esc(k.term)}</span>`;
@@ -843,30 +857,31 @@ function buildNode(p, hiddenSet) {
 
   el.innerHTML = `
     <div class="n-actions">
-      <div class="nact act-add" title="添加子女">＋</div>
+      ${isDraft ? '' : '<div class="nact act-add" title="添加子女">＋</div>'}
       <div class="nact act-edit" title="编辑">✎</div>
     </div>
     ${hiddenCount > 0 ? `<div class="n-col-badge act-toggle" title="展开支系">${hiddenCount}<span style="margin-left:2px">▸</span></div>` : ''}
     <div class="n-name">
       <span class="dot ${p.gender}" style="width:8px;height:8px"></span>
-      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name || '未命名')}</span>
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name || (isDraft ? '新人物（未保存）' : '未命名'))}</span>
       ${state.egoId === p.id ? '<span class="n-ego-badge">我</span>' : ''}
     </div>
-    <div class="n-meta">第 ${p.gen ?? 0} 辈${p.order ? ` · 排行${p.order}` : ''}</div>
+    <div class="n-meta">第 ${p.gen ?? 0} 辈${(p.order >= 1) ? ` · 排行${p.order}` : ''}${isDraft ? ' · 草稿' : ''}</div>
     ${termBadge}
   `;
 
-  el.addEventListener('dblclick', ev => {
+  if (!isDraft) el.addEventListener('dblclick', ev => {
     ev.stopPropagation();
     state.egoId = p.id;
     save(); renderAll();
     toast(`已将「${p.name}」设为称谓基准`);
   });
   el.querySelector('.act-edit').addEventListener('click', ev => {
-    ev.stopPropagation(); openEditor(p.id);
+    ev.stopPropagation();
+    if (isDraft) openDraft(p); else openEditor(p.id);
   });
   const addBtn = el.querySelector('.act-add');
-  addBtn.addEventListener('click', ev => {
+  if (addBtn) addBtn.addEventListener('click', ev => {
     ev.stopPropagation();
     quickAddChild(p);
   });
@@ -877,12 +892,12 @@ function buildNode(p, hiddenSet) {
     save(); renderAll();
   });
 
-  attachNodeDrag(el, p);
+  attachNodeDrag(el, p, isDraft);
   return el;
 }
 
 /* ---------------- 节点拖拽 ---------------- */
-function attachNodeDrag(el, p) {
+function attachNodeDrag(el, p, isDraft = false) {
   let sx, sy, ox, oy, dragging = false, moved = false;
   el.addEventListener('pointerdown', ev => {
     if (ev.target.closest('.nact') || ev.target.closest('.n-col-badge')) return;
@@ -906,8 +921,8 @@ function attachNodeDrag(el, p) {
   const end = ev => {
     if (!dragging) return;
     dragging = false;
-    if (moved) save();
-    if (!moved) selectPerson(p.id);
+    if (moved) { if (!isDraft) save(); }
+    else if (!isDraft) selectPerson(p.id);
   };
   el.addEventListener('pointerup', end);
   el.addEventListener('pointercancel', end);
@@ -935,6 +950,14 @@ function refreshEdgesFor(id) {
       if (!coupleDrawn.has(key)) { coupleDrawn.add(key); edgeLayer.appendChild(buildSpouseEdge(p, sp)); }
     }
   }
+  // 草稿与其父母的连线
+  if (state.draft) {
+    for (const par of [state.draft.fatherId, state.draft.motherId]) {
+      if (!par) continue;
+      const parent = byId(par);
+      if (parent && isVisible(parent, hiddenSet)) edgeLayer.appendChild(buildEdge(parent, state.draft));
+    }
+  }
 }
 
 function selectPerson(id) {
@@ -952,6 +975,7 @@ canvasWrap.addEventListener('pointerdown', ev => {
   canvasWrap.classList.add('panning');
   canvasWrap.setPointerCapture(ev.pointerId);
   if (ev.target === canvasWrap || ev.target.id === 'viewport' || ev.target.id === 'edgeLayer') {
+    if (state.draft) { state.draft = null; }
     state.selectedId = null;
     renderAll();
   }
@@ -1337,18 +1361,19 @@ function panToNode(id) {
  * 人物编辑表单
  * ===================================================================== */
 function openEditor(id) {
+  discardDraft();
   revealNode(id);
   state.tab = 'people';
   state.selectedId = id;
   renderAll();
   // 渲染后填充表单内容
-  renderEditorForm(id);
+  const p = byId(id);
+  if (p) renderEditorForm(p, false);
 }
 
-function renderEditorForm(id) {
-  const p = byId(id);
-  if (!p) { renderPeopleTab(); return; }
-  const forbidden = descendantSet(p.id); // 后代不能被选为父母（防环）
+function renderEditorForm(p, isDraft) {
+  if (!isDraft && !byId(p.id)) { renderPeopleTab(); return; }
+  const forbidden = isDraft ? new Set() : descendantSet(p.id); // 后代不能被选为父母（防环）
   // 按性别过滤候选；当前已选但性别不符（旧数据）仍保留在列表中
   const parentOptions = (kind) => {
     const want = kind === 'father' ? 'male' : 'female';
@@ -1362,12 +1387,13 @@ function renderEditorForm(id) {
   sideBody.innerHTML = `
     <div class="section-title">
       <span class="mini-link" id="backList">← 返回列表</span>
-      <span>编辑人物</span>
+      <span>${isDraft ? '新建人物' : '编辑人物'}</span>
     </div>
+    ${isDraft ? '<div class="gen-warn" style="display:block;background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8">填写后点击「保存」才会加入家谱；返回列表将放弃本次新建。</div>' : ''}
     <div class="gen-warn" id="genWarn">⚠ 父母辈分不一致或与本人辈分冲突，请检查。</div>
     <div class="field">
-      <label>姓名</label>
-      <input type="text" id="fName" value="${esc(p.name)}" placeholder="人物姓名">
+      <label>姓名${isDraft ? '' : ''}</label>
+      <input type="text" id="fName" value="${esc(p.name)}" placeholder="人物姓名" autofocus>
     </div>
     <div class="field">
       <label>性别</label>
@@ -1396,10 +1422,11 @@ function renderEditorForm(id) {
       <textarea id="fNote" placeholder="生卒、字、籍贯、过继等说明">${esc(p.note || '')}</textarea>
     </div>
     <div class="form-actions">
-      <button class="btn primary" id="fSave">保存</button>
-      <button class="btn danger" id="fDelete">删除</button>
+      <button class="btn primary" id="fSave">${isDraft ? '保存人物' : '保存'}</button>
+      <button class="btn ${isDraft ? '' : 'danger'}" id="fDelete">${isDraft ? '取消新建' : '删除'}</button>
     </div>
   `;
+  sideBody.querySelector('#fName').focus();
 
   let gender = p.gender;
   sideBody.querySelectorAll('#fGender .opt').forEach(o => o.addEventListener('click', () => {
@@ -1412,24 +1439,27 @@ function renderEditorForm(id) {
     const mv = sideBody.querySelector('#fMother').value;
     const gs = [fv, mv].map(v => v ? byId(v)?.gen : null).filter(g => typeof g === 'number');
     const warnEl = sideBody.querySelector('#genWarn');
+    const draftHintShown = isDraft;
     if (gs.length === 2 && gs[0] !== gs[1]) {
+      if (!draftHintShown) warnEl.style.display = 'none';
       warnEl.textContent = `⚠ 父母辈分不一致（第${gs[0]}辈 / 第${gs[1]}辈），请检查。`;
       warnEl.style.display = 'block';
     } else if (gs.length) {
       const cur = parseInt(sideBody.querySelector('#fGen').value, 10);
       const sug = Math.max(...gs) + 1;
       if (isNaN(cur) || cur !== sug) {
-        // 仅当新建（原无父母）或当前值不合理时自动填，不覆盖用户显式值
-        if (!p.fatherId && !p.motherId || isNaN(cur) || cur <= Math.max(...gs)) {
+        // 新建时，或当前值不晚于父母辈分时自动建议；不覆盖用户合理的显式值
+        if (isDraft || isNaN(cur) || cur <= Math.max(...gs)) {
           sideBody.querySelector('#fGen').value = sug;
         }
       }
-      warnEl.style.display = 'none';
-    } else warnEl.style.display = 'none';
+      if (!isDraft) warnEl.style.display = 'none';
+    } else if (!isDraft) warnEl.style.display = 'none';
   };
   sideBody.querySelector('#fFather').addEventListener('change', suggestGen);
   sideBody.querySelector('#fMother').addEventListener('change', suggestGen);
   sideBody.querySelector('#backList').addEventListener('click', () => {
+    if (isDraft) discardDraft();
     state.selectedId = null; renderAll();
   });
   sideBody.querySelector('#fSave').addEventListener('click', async () => {
@@ -1443,9 +1473,16 @@ function renderEditorForm(id) {
         `该人物辈分（第${genV}辈）不晚于其父母（第${Math.max(...pg)}辈），子女通常应为父母下一辈。仍要保存吗？`);
       if (!ok) return;
     }
-    savePersonForm(p, gender);
+    savePersonForm(p, gender, isDraft);
   });
   sideBody.querySelector('#fDelete').addEventListener('click', async () => {
+    if (isDraft) {
+      discardDraft();
+      state.selectedId = null;
+      renderAll();
+      toast('已放弃新建');
+      return;
+    }
     const kids = childrenOf(p.id);
     const ok = await confirmModal('删除人物',
       `确定删除「${p.name || '未命名'}」吗？${kids.length ? `其 ${kids.length} 个子女将变为无父/无母（不会被删除）。` : '此操作不可撤销。'}`);
@@ -1454,7 +1491,7 @@ function renderEditorForm(id) {
   });
 }
 
-function savePersonForm(p, gender) {
+function savePersonForm(p, gender, isDraft) {
   const name = sideBody.querySelector('#fName').value.trim();
   const gen = parseInt(sideBody.querySelector('#fGen').value, 10);
   const orderRaw = sideBody.querySelector('#fOrder').value.trim();
@@ -1463,25 +1500,38 @@ function savePersonForm(p, gender) {
   const motherId = sideBody.querySelector('#fMother').value || null;
   const note = sideBody.querySelector('#fNote').value.trim();
 
-  if (!name) { toast('请填写姓名'); return; }
-  if (fatherId === motherId && fatherId) { toast('父亲和母亲不能是同一人'); return; }
+  if (!name) { toast('请填写姓名'); return false; }
+  if (fatherId === motherId && fatherId) { toast('父亲和母亲不能是同一人'); return false; }
+  if (orderRaw !== '' && (isNaN(order) || order < 1)) { toast('出生顺序需为不小于 1 的正整数（或留空表示不排行）'); return false; }
+  if (isNaN(gen)) { toast('辈分为必填整数'); return false; }
 
-  // 辈分：父母存在时取较高者 +1；若用户显式填写且与父母平级或更高，给一次确认
-  let finalGen = isNaN(gen) ? 0 : gen;
+  // 辈分：父母存在时默认取较高者 +1
+  let finalGen = gen;
   const fp = fatherId ? byId(fatherId) : null;
   const mp = motherId ? byId(motherId) : null;
   const parentMax = [fp, mp].map(x => x?.gen).filter(g => typeof g === 'number');
-  if (parentMax.length) finalGen = isNaN(gen) ? Math.max(...parentMax) + 1 : gen;
 
-  Object.assign(p, {
+  const saved = {
     name, gender, gen: finalGen,
-    order: isNaN(order) || order === null ? null : order,
+    order: order === null || isNaN(order) ? null : order,
     fatherId, motherId, note,
-  });
+  };
+
+  if (isDraft) {
+    // 草稿首次入库：写入字段、去掉草稿标记（x/y 保留用户在画布上预览拖动的位置）
+    Object.assign(p, saved);
+    delete p.__draft;
+    state.people.push(p);
+    state.draft = null;
+    state.selectedId = p.id;
+  } else {
+    Object.assign(p, saved);
+  }
   save();
   renderGenFilter();
   renderAll();
-  toast('已保存');
+  toast(isDraft ? '人物已添加' : '已保存');
+  return true;
 }
 
 function deletePerson(id) {
@@ -1504,13 +1554,14 @@ function deletePerson(id) {
 }
 
 function quickAddChild(parent) {
-  // 依据父母性别自动匹配另一方位置
+  // 依据父母性别自动匹配另一方位置；作为“草稿”打开，保存前不入库
   const child = {
     id: uid(), name: '', gen: (parent.gen ?? 0) + 1, gender: 'unknown',
     order: childrenOf(parent.id).length + 1,
     fatherId: parent.gender === 'male' ? parent.id : null,
     motherId: parent.gender === 'female' ? parent.id : null,
     note: '', x: (parent.x ?? 0) + 160, y: (parent.y ?? 0) + GEN_GAP,
+    __draft: true,
   };
   // 若已知另一方家长，自动关联
   const partner = spouseOf(parent.id);
@@ -1518,13 +1569,11 @@ function quickAddChild(parent) {
     if (partner.gender === 'male' && !child.fatherId) child.fatherId = partner.id;
     if (partner.gender === 'female' && !child.motherId) child.motherId = partner.id;
   }
-  state.people.push(child);
-  save(); renderGenFilter();
-  openEditor(child.id);
+  openDraft(child);
 }
 
 /* =====================================================================
- * 添加人物（空表单）
+ * 添加人物（空表单，草稿模式：保存时才写入数据）
  * ===================================================================== */
 function addPerson() {
   const rect = canvasWrap.getBoundingClientRect();
@@ -1535,11 +1584,25 @@ function addPerson() {
     id: uid(), name: '', gen: 0, gender: 'unknown', order: null,
     fatherId: null, motherId: null, note: '',
     x: cx + (Math.random() * 60 - 30), y: cy + (Math.random() * 60 - 30),
+    __draft: true,
   };
-  state.people.push(p);
-  save();
-  renderGenFilter();
-  openEditor(p.id);
+  openDraft(p);
+}
+
+/** 打开一个尚未入库的草稿人物 */
+function openDraft(draft) {
+  discardDraft();
+  state.draft = draft;
+  state.tab = 'people';
+  state.selectedId = draft.id;
+  renderAll();          // 画布上以虚线样式预览草稿
+  renderEditorForm(draft, true);
+}
+function discardDraft() {
+  if (state.draft) {
+    state.draft = null;
+    if (state.selectedId && !byId(state.selectedId)) state.selectedId = null;
+  }
 }
 
 /* =====================================================================
@@ -1597,6 +1660,8 @@ function importJSON(file) {
       state.collapsed = d.collapsed || {};
       state.egoId = d.egoId || null;
       state.genFilter = 'all';
+      state.draft = null;
+      state.selectedId = null;
       // 清理悬空引用
       const ids = new Set(state.people.map(p => p.id));
       state.people.forEach(p => {
@@ -1742,7 +1807,7 @@ async function exportPNG() {
     // 元信息
     ctx.fillStyle = '#9ca3af';
     ctx.font = '10px "PingFang SC","Microsoft YaHei",sans-serif';
-    ctx.fillText(`第${p.gen ?? 0}辈${p.order ? '·排行' + p.order : ''}`, x + 12, y + 42);
+    ctx.fillText(`第${p.gen ?? 0}辈${p.order >= 1 ? '·排行' + p.order : ''}`, x + 12, y + 42);
     // 称谓
     if (state.egoId && state.egoId !== p.id) {
       const k = displayKinship(state.egoId, p.id);
@@ -1821,6 +1886,8 @@ async function loadSample(force) {
   state.people = buildSample();
   state.customTerms = {};
   state.collapsed = {};
+  state.draft = null;
+  state.selectedId = null;
   state.egoId = state.people.find(p => p.name === '李文')?.id || null;
   state.genFilter = 'all';
   autoLayout();
@@ -1868,7 +1935,11 @@ document.getElementById('genFilter').addEventListener('change', e => {
   state.genFilter = e.target.value; save(); renderCanvas();
 });
 document.querySelectorAll('#tabs .tab').forEach(t => {
-  t.addEventListener('click', () => { state.tab = t.dataset.tab; state._kinEdit = null; renderSidebar(); });
+  t.addEventListener('click', () => {
+    // 切离“人物”表单时放弃未保存的新建草稿
+    if (state.draft && t.dataset.tab !== 'people') { state.draft = null; state.selectedId = null; }
+    state.tab = t.dataset.tab; state._kinEdit = null; renderAll();
+  });
 });
 document.getElementById('egoClear').addEventListener('click', () => {
   state.egoId = null; save(); renderAll();
@@ -1878,13 +1949,16 @@ document.getElementById('btnClear').addEventListener('click', async () => {
   const ok = await confirmModal('清空全部数据', '将删除所有人物、称谓修正与布局，且无法恢复。确定吗？');
   if (!ok) return;
   state.people = []; state.customTerms = {}; state.collapsed = {};
-  state.egoId = null; state.selectedId = null; state.genFilter = 'all';
+  state.egoId = null; state.selectedId = null; state.genFilter = 'all'; state.draft = null;
   localStorage.removeItem(STORAGE_KEY);
   renderGenFilter(); renderAll();
   toast('已清空');
 });
 window.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { state.selectedId = null; state._kinEdit = null; renderAll(); }
+  if (e.key === 'Escape') {
+    if (state.draft) state.draft = null;
+    state.selectedId = null; state._kinEdit = null; renderAll();
+  }
 });
 
 (function init() {
