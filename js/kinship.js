@@ -33,8 +33,9 @@ function getAdj() {
     for (const e of (p.parents || [])) {
       if (!byId(e.id)) continue;
       const rank = EDGE_RANK[e.type] ?? 0;
-      add(p.id, { to: e.id, kind: 'up', type: e.type, rank });
-      add(e.id, { to: p.id, kind: 'down', type: e.type, rank });
+      // 上/下行边都携带槽位角色：称谓推导以录入的角色为准，而非按性别改写
+      add(p.id, { to: e.id, kind: 'up', type: e.type, role: e.role, rank });
+      add(e.id, { to: p.id, kind: 'down', type: e.type, role: e.role, rank });
     }
   }
   // 配偶边：显式 + 共同子女推定（排除互为祖先/后代的异常数据）
@@ -67,52 +68,45 @@ function costBetter(c1, c2) {
     : c1[2] < c2[2];
 }
 
-/** 返回 from→to 的最优路径步骤 [{to, kind, type}]，不连通返回 null */
+/** 返回 from→to 的最优路径步骤 [{to, kind, type, role}]，不连通返回 null */
 function bestPath(fromId, toId) {
   const adj = getAdj();
-  const dist = new Map([[fromId, [0, 0, 0]]]);
+  // 状态 = (人物, 上一步是否为下行)。禁止“先下后上”：
+  // 经共同子女绕到另一位家长必须走配偶边（显式或一父一母推定），
+  // 否则同槽位的两名家长（如亲生父亲与养父）会被误判为配偶。
+  const startKey = fromId + '|0';
+  const dist = new Map([[startKey, [0, 0, 0]]]);
   const prev = new Map();
-  const pq = [{ id: fromId, cost: [0, 0, 0] }];
+  const pq = [{ id: fromId, down: false, cost: [0, 0, 0], key: startKey }];
+  let endKey = null;
   while (pq.length) {
     let mi = 0;
     for (let i = 1; i < pq.length; i++) if (costBetter(pq[i].cost, pq[mi].cost)) mi = i;
-    const { id, cost } = pq.splice(mi, 1)[0];
-    if (costBetter(dist.get(id), cost)) continue; // 过期堆元素
-    if (id === toId) break;
-    for (const e of (adj.get(id) || [])) {
-      const nc = [Math.max(cost[0], e.rank), cost[1] + 1, cost[2] + (e.kind === 'spouse' ? 1 : 0)];
-      if (!dist.has(e.to) || costBetter(nc, dist.get(e.to))) {
-        dist.set(e.to, nc);
-        prev.set(e.to, { from: id, step: { to: e.to, kind: e.kind, type: e.type } });
-        pq.push({ id: e.to, cost: nc });
+    const cur = pq.splice(mi, 1)[0];
+    if (costBetter(dist.get(cur.key), cur.cost)) continue; // 过期堆元素
+    if (cur.id === toId) { endKey = cur.key; break; }
+    for (const e of (adj.get(cur.id) || [])) {
+      if (cur.down && e.kind === 'up') continue; // 禁止先下后上
+      const nd = e.kind === 'down';
+      const nk = e.to + '|' + (nd ? '1' : '0');
+      const nc = [Math.max(cur.cost[0], e.rank), cur.cost[1] + 1, cur.cost[2] + (e.kind === 'spouse' ? 1 : 0)];
+      if (!dist.has(nk) || costBetter(nc, dist.get(nk))) {
+        dist.set(nk, nc);
+        prev.set(nk, { from: cur.key, step: { to: e.to, kind: e.kind, type: e.type, role: e.role ?? null } });
+        pq.push({ id: e.to, down: nd, cost: nc, key: nk });
       }
     }
   }
-  if (fromId !== toId && !prev.has(toId)) return null;
+  if (!endKey) return null;
   const steps = [];
-  let cur = toId;
-  while (cur !== fromId) {
-    const pr = prev.get(cur);
+  let ck = endKey;
+  while (ck !== startKey) {
+    const pr = prev.get(ck);
     if (!pr) return null;
     steps.unshift(pr.step);
-    cur = pr.from;
+    ck = pr.from;
   }
   return steps;
-}
-
-/** 归一化：把“先下后上”（经共同子女绕道）折叠为一步配偶边 */
-function normalizeSteps(steps) {
-  const out = [];
-  for (let i = 0; i < steps.length; i++) {
-    const s = steps[i];
-    if (s.kind === 'down' && i + 1 < steps.length && steps[i + 1].kind === 'up') {
-      out.push({ to: steps[i + 1].to, kind: 'spouse', type: null });
-      i++;
-    } else {
-      out.push(s);
-    }
-  }
-  return out;
 }
 
 /** 路径涉及的非亲生类型 */
@@ -131,11 +125,12 @@ function renderPath(egoId, steps) {
     let label;
     if (st.kind === 'spouse') {
       label = '配偶';
+    } else if (st.kind === 'up') {
+      // 以录入的槽位角色为准（父亲/母亲），不按性别改写
+      label = `${roleLabel(st.role)}·${relTypeLabel(st.type)}`;
     } else {
       const g = tp ? tp.gender : 'unknown';
-      const role = st.kind === 'up'
-        ? (g === 'female' ? '母亲' : g === 'male' ? '父亲' : '父母')
-        : (g === 'female' ? '女儿' : g === 'male' ? '儿子' : '子女');
+      const role = g === 'female' ? '女儿' : g === 'male' ? '儿子' : '子女';
       label = `${role}·${relTypeLabel(st.type)}`;
     }
     s += ` ─${label}→ ${nameOf(st.to)}`;
@@ -176,23 +171,30 @@ function baseFamilyTerm(ego, target, steps) {
   const pathA = nodes.slice(0, a + 1);           // ego → 共同祖先
   const pathB = nodes.slice(a).reverse();        // target → 共同祖先
   const tg = target.gender;
+  // 槽位角色（亲子边必带）：firstRole=ego 侧家长，lastRole=目标侧连接人
+  const firstRole = steps.length ? steps[0].role : null;
+  const lastRole = steps.length ? steps[steps.length - 1].role : null;
 
   /* ---- 目标是 ego 的祖先 ---- */
   if (b === 0) {
     const n = a;
+    const ancRole = lastRole; // 祖先本人被录入的槽位角色
     let term;
-    if (n === 1) term = tg === 'female' ? '母亲' : tg === 'male' ? '父亲' : '父/母';
-    else {
-      const base = tg === 'female' ? '祖母' : tg === 'male' ? '祖父' : '祖父母';
-      term = '曾'.repeat(Math.max(0, n - 2)) + base;
-      // 经母亲上溯到的祖辈为外祖父母
-      if (n === 2) {
-        const stepP = byId(pathA[1]);
-        if (stepP && stepP.gender === 'female')
-          term = tg === 'female' ? '外祖母' : tg === 'male' ? '外祖父' : '外祖父母';
-      }
+    if (n === 1) {
+      term = ancRole === 'father' ? '父亲' : ancRole === 'mother' ? '母亲'
+        : tg === 'female' ? '母亲' : tg === 'male' ? '父亲' : '父/母';
+      return { term, tag: '直系', placeholder: !ancRole && tg === 'unknown', a, b, pathA, pathB };
     }
-    return { term, tag: n >= 2 ? '祖孙' : '直系', placeholder: tg === 'unknown' && n === 1, a, b, pathA, pathB };
+    const isGM = ancRole ? ancRole === 'mother' : tg === 'female';
+    const gmUnknown = !ancRole && tg === 'unknown';
+    if (n === 2) {
+      // 经母亲（槽位）上溯到的祖辈为外祖父母
+      const outer = firstRole === 'mother' ? '外' : '';
+      term = outer + (gmUnknown ? '祖父母' : isGM ? '祖母' : '祖父');
+    } else {
+      term = '曾'.repeat(Math.max(0, n - 2)) + (gmUnknown ? '祖父母' : isGM ? '祖母' : '祖父');
+    }
+    return { term, tag: '祖孙', placeholder: gmUnknown, a, b, pathA, pathB };
   }
   /* ---- ego 是目标的祖先 ---- */
   if (a === 0) {
@@ -211,12 +213,11 @@ function baseFamilyTerm(ego, target, steps) {
   }
 
   const sen = collateralSeniority(ego, target, pathA, pathB, a, b);
-  const linkA = pathA[1] ? byId(pathA[1]) : null; // ego 侧上溯连接人
-  const linkB = pathB[1] ? byId(pathB[1]) : null; // target 侧上溯连接人
-  // 父系一脉：共同祖先之下两侧连接人全部为男性
-  const maleLine = pathA.length >= 2 && pathB.length >= 2
-    && pathA.slice(1).every(id => byId(id) && byId(id).gender === 'male')
-    && pathB.slice(1).every(id => byId(id) && byId(id).gender === 'male');
+  // 两侧连接人的槽位角色（以录入为准，不按性别改写）
+  const linkAMother = firstRole === 'mother'; // ego 侧上溯连接人是母亲
+  const linkBMother = lastRole === 'mother';  // target 侧上溯连接人是母亲
+  // 父系一脉：路径上所有亲子槽位均为父亲
+  const maleLine = a >= 1 && b >= 1 && steps.every(s => s.role === 'father');
   const prefix = maleLine ? '堂' : '表';
 
   /* ---- 兄弟姐妹 ---- */
@@ -224,7 +225,7 @@ function baseFamilyTerm(ego, target, steps) {
 
   /* ---- (2,1) 父母辈：伯/叔/姑 vs 舅/姨 ---- */
   if (a === 2 && b === 1) {
-    if (linkA && linkA.gender === 'female') {
+    if (linkAMother) {
       if (tg === 'female') return { term: '姨母', tag: '叔侄', a, b, pathA, pathB };
       if (tg === 'male') return { term: '舅父', tag: '叔侄', a, b, pathA, pathB };
       return { term: '舅/姨', tag: '叔侄', placeholder: true, a, b, pathA, pathB };
@@ -236,7 +237,7 @@ function baseFamilyTerm(ego, target, steps) {
 
   /* ---- (1,2) 子女辈：侄/甥 ---- */
   if (a === 1 && b === 2) {
-    if (linkB && linkB.gender === 'female') {
+    if (linkBMother) {
       if (tg === 'female') return { term: '甥女', tag: '叔侄', a, b, pathA, pathB };
       if (tg === 'male') return { term: '外甥', tag: '叔侄', a, b, pathA, pathB };
       return { term: '甥/甥女', tag: '叔侄', placeholder: true, a, b, pathA, pathB };
@@ -259,7 +260,7 @@ function baseFamilyTerm(ego, target, steps) {
 
   /* ---- (2,3) 堂/表兄弟姐妹之子女 ---- */
   if (a === 2 && b === 3) {
-    if (linkB && linkB.gender === 'female') {
+    if (linkBMother) {
       if (tg === 'female') return { term: prefix + '甥女', tag: maleLine ? '堂亲' : '表亲', placeholder: true, a, b, pathA, pathB };
       if (tg === 'male') return { term: prefix + '甥', tag: maleLine ? '堂亲' : '表亲', placeholder: true, a, b, pathA, pathB };
       return { term: prefix + '甥/甥女', tag: maleLine ? '堂亲' : '表亲', placeholder: true, a, b, pathA, pathB };
@@ -275,7 +276,7 @@ function baseFamilyTerm(ego, target, steps) {
 
   /* ---- (3,1) 祖父母的同辈 ---- */
   if (a === 3 && b === 1) {
-    if (linkA && linkA.gender === 'female') {
+    if (linkAMother) {
       if (tg === 'female') return { term: '姨祖母', tag: '祖孙', placeholder: true, a, b, pathA, pathB };
       if (tg === 'male') return { term: '舅祖父', tag: '祖孙', placeholder: true, a, b, pathA, pathB };
       return { term: '舅/姨祖父', tag: '祖孙', placeholder: true, a, b, pathA, pathB };
@@ -287,7 +288,7 @@ function baseFamilyTerm(ego, target, steps) {
 
   /* ---- (1,3) 兄弟姐妹之孙辈 ---- */
   if (a === 1 && b === 3) {
-    if (linkB && linkB.gender === 'female') {
+    if (linkBMother) {
       if (tg === 'female') return { term: '甥孙女', tag: '叔侄', placeholder: true, a, b, pathA, pathB };
       if (tg === 'male') return { term: '甥孙', tag: '叔侄', placeholder: true, a, b, pathA, pathB };
       return { term: '甥孙辈', tag: '叔侄', placeholder: true, a, b, pathA, pathB };
@@ -337,18 +338,24 @@ function inLawOfSpouse(segB, spouse, target, ego) {
   const typed = typedInfo(segB);
   const nonBio = typed.hasAdopt || typed.hasStep;
 
-  // 配偶的父母：岳父/岳母（我为男）或 公公/婆婆（我为女）
+  // 配偶的父母：岳父/岳母（我为男）或 公公/婆婆（我为女）；以录入槽位角色为准
   if (a === 1 && b === 0) {
-    if (nonBio) return { term: (typed.hasStep ? '继' : '养') + (tg === 'female' ? '岳母/婆婆' : '岳父/公公'), placeholder: true };
-    if (eg === 'male') return { term: tg === 'female' ? '岳母' : tg === 'male' ? '岳父' : '岳父/岳母', placeholder: tg === 'unknown' };
-    if (eg === 'female') return { term: tg === 'female' ? '婆婆' : tg === 'male' ? '公公' : '公公/婆婆', placeholder: tg === 'unknown' };
-    return { term: tg === 'female' ? '配偶的母亲' : tg === 'male' ? '配偶的父亲' : '配偶的父母', placeholder: true };
+    const r = segB[0] ? segB[0].role : null;
+    const isFather = r ? r === 'father' : tg === 'male';
+    const known = !!r || tg !== 'unknown';
+    if (nonBio) return { term: (typed.hasStep ? '继' : '养') + (isFather ? '岳父/公公' : '岳母/婆婆'), placeholder: true };
+    if (eg === 'male') return { term: isFather ? '岳父' : '岳母', placeholder: !known };
+    if (eg === 'female') return { term: isFather ? '公公' : '婆婆', placeholder: !known };
+    return { term: isFather ? '配偶的父亲' : '配偶的母亲', placeholder: true };
   }
   // 配偶的祖辈
   if (a === 2 && b === 0) {
+    const r = segB[segB.length - 1] ? segB[segB.length - 1].role : null;
+    const gmKnown = !!r || tg !== 'unknown';
+    const isGM = r ? r === 'mother' : tg === 'female';
     if (eg === 'male' && !nonBio)
-      return { term: tg === 'female' ? '岳祖母' : tg === 'male' ? '岳祖父' : '岳祖父母', placeholder: true };
-    return { term: `配偶的${tg === 'female' ? '祖母' : tg === 'male' ? '祖父' : '祖父母'}`, placeholder: true };
+      return { term: gmKnown ? (isGM ? '岳祖母' : '岳祖父') : '岳祖父母', placeholder: true };
+    return { term: `配偶的${gmKnown ? (isGM ? '祖母' : '祖父') : '祖父母'}`, placeholder: true };
   }
   // 配偶的子女（非本人所生）→ 继子女
   if (a === 0 && b === 1)
@@ -409,12 +416,13 @@ function spouseOfRelative(segA, X, target, ego) {
   // 叔伯姑舅姨的配偶：伯母/婶婶/姑父/舅母/姨父
   if (a === 2 && b === 1) {
     const linkA = byId(nodes[1]); // ego 的父/母
+    const linkRole = segA[0] ? segA[0].role : null; // ego 家长槽位（以录入角色为准）
     const sen = seniority(X, linkA); // X 相对 ego 父母的长幼
-    if (linkA && linkA.gender === 'male') {
+    if (linkRole === 'father') {
       if (xg === 'male') return { term: sen > 0 ? '伯母' : sen < 0 ? '婶婶' : '伯母/婶婶', placeholder: sen === 0 };
       if (xg === 'female') return { term: '姑父', placeholder: false };
     }
-    if (linkA && linkA.gender === 'female') {
+    if (linkRole === 'mother') {
       if (xg === 'male') return { term: '舅母', placeholder: false };
       if (xg === 'female') return { term: '姨父', placeholder: false };
     }
@@ -438,9 +446,21 @@ function kinship(egoId, targetId) {
 
   const raw = bestPath(egoId, targetId);
   if (!raw) {
+    // 不连通：若同为某子女的家长（同槽位，如亲生父亲与养父），
+    // 既非配偶也非血亲——给出带说明的占位称谓，可手工修正
+    const shared = state.people.find(c =>
+      (c.parents || []).some(e => e.id === egoId) &&
+      (c.parents || []).some(e => e.id === targetId));
+    if (shared) {
+      return {
+        term: '共同家长', tag: '无关联', relType: '无关联',
+        detail: `两人同为「${shared.name || '未命名'}」的家长（同槽位家长，非配偶/血亲关系）`,
+        placeholder: true,
+      };
+    }
     return { term: '无亲属关联', tag: '无关联', relType: '无关联', detail: '两人物未通过父母或配偶关系连通', placeholder: true };
   }
-  const steps = normalizeSteps(raw);
+  const steps = raw;
   const detail = '推导路径：' + renderPath(egoId, steps);
   const spouseIdx = [];
   steps.forEach((s, i) => { if (s.kind === 'spouse') spouseIdx.push(i); });

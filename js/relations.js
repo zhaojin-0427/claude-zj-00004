@@ -35,21 +35,28 @@ function spousesOf(id) {
   return (p.spouses || []).map(byId).filter(Boolean);
 }
 
-/** 因共同子女推定的伴侣：子女的“父亲槽”与“母亲槽”两两配对 */
+/** 因共同子女推定的伴侣。
+ *  规则：孩子恰为「唯一父槽 × 唯一母槽」时推定二人为伴侣；
+ *  家长更多时（如另有养父/继母），只把同类型的对槽家长配成伴侣
+ *  （亲生父×亲生母、养父×养母），避免把亲生父亲与养母等误配为配偶。 */
 function coParentPartnersOf(id) {
   const out = [];
   const seen = new Set();
   for (const c of childrenOf(id)) {
     const myEntry = c.parents.find(e => e.id === id);
     if (!myEntry) continue;
-    for (const e of c.parents) {
-      if (e.id === id || seen.has(e.id)) continue;
-      // 仅在一父一母槽位之间推定伴侣，避免把两位父亲/两位母亲误判为配偶
-      if (e.role === myEntry.role) continue;
-      const other = byId(e.id);
-      if (!other) continue;
-      seen.add(e.id);
-      out.push({ person: other, child: c });
+    const fathers = c.parents.filter(e => e.role === 'father' && byId(e.id));
+    const mothers = c.parents.filter(e => e.role === 'mother' && byId(e.id));
+    let other = null;
+    if (fathers.length === 1 && mothers.length === 1) {
+      other = myEntry.role === 'father' ? mothers[0] : fathers[0];
+    } else {
+      const opposites = myEntry.role === 'father' ? mothers : fathers;
+      other = opposites.find(e => e.type === myEntry.type) || null;
+    }
+    if (other && !seen.has(other.id)) {
+      seen.add(other.id);
+      out.push({ person: byId(other.id), child: c });
     }
   }
   return out;

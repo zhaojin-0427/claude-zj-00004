@@ -26,6 +26,7 @@ const ISSUE_TYPE_LABEL = {
   'dangling': '悬空引用',
   'role-gender': '角色性别不符',
   'gen-parent': '辈分矛盾',
+  'gen-coparent': '辈分矛盾',
   'gen-spouse': '辈分矛盾',
 };
 
@@ -105,12 +106,28 @@ function validateAll(people) {
     }
   }
 
-  /* ---- 配偶辈分差距（提示级，去重） ---- */
+  /* ---- 同一子女的各位家长辈分不一致（提示级） ---- */
+  const coParentPairs = new Set();
+  for (const p of people) {
+    const entries = (p.parents || []).filter(e => map.has(e.id));
+    for (let i = 0; i < entries.length; i++)
+      for (let j = i + 1; j < entries.length; j++)
+        coParentPairs.add([entries[i].id, entries[j].id].sort().join('~'));
+    const gens = entries.map(e => map.get(e.id).gen).filter(g => Number.isFinite(g));
+    if (gens.length >= 2 && Math.min(...gens) !== Math.max(...gens)) {
+      const detail = entries
+        .map(e => `${roleLabel(e.role)}·${relTypeLabel(e.type)}「${nm(map.get(e.id))}」（第${map.get(e.id).gen}辈）`)
+        .join('、');
+      push('warn', 'gen-coparent', `「${nm(p)}」的各位家长辈分不一致：${detail}。`, [p.id, ...entries.map(e => e.id)]);
+    }
+  }
+
+  /* ---- 配偶辈分差距（提示级，去重；共同家长已由上条覆盖的不再重复） ---- */
   const pairSeen = new Set();
   for (const p of people) {
     for (const s of (p.spouses || [])) {
       const key = [p.id, s].sort().join('~');
-      if (pairSeen.has(key)) continue;
+      if (pairSeen.has(key) || coParentPairs.has(key)) continue;
       pairSeen.add(key);
       const sp = map.get(s);
       if (!sp) continue;

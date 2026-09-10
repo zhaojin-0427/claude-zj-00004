@@ -109,7 +109,20 @@ async function exportPNG() {
     minX = Math.min(minX, p.x ?? 0); minY = Math.min(minY, p.y ?? 0);
     maxX = Math.max(maxX, (p.x ?? 0) + NODE_W); maxY = Math.max(maxY, (p.y ?? 0) + NODE_H);
   }
-  const W = (maxX - minX) + pad * 2;
+  // 图例内容（提前测量所需宽度，人物较少时画布随之加宽，避免图例被右边界裁切）
+  const legendDots = [['#2563eb', '男'], ['#db2777', '女'], ['#059669', '称谓基准']];
+  const legendLines = [[EDGE_STYLE.bio, '亲生'], [EDGE_STYLE.nonbio, '收养/继亲'], [EDGE_STYLE.spouse, '配偶']];
+  const LEGEND_FONT = '11px "PingFang SC","Microsoft YaHei",sans-serif';
+  const legendWidth = (() => {
+    const mc = document.createElement('canvas').getContext('2d');
+    mc.font = LEGEND_FONT;
+    let w = mc.measureText('图例：').width + 4;
+    for (const [, t] of legendDots) w += 14 + mc.measureText(t).width + 12;
+    for (const [, t] of legendLines) w += 31 + mc.measureText(t).width + 14;
+    return Math.ceil(w);
+  })();
+
+  const W = Math.max((maxX - minX) + pad * 2, legendWidth + pad * 2);
   const H = (maxY - minY) + pad * 2 + 44; // 顶部标题空间
   const scale = 2;
 
@@ -250,24 +263,19 @@ async function exportPNG() {
     }
   }
 
-  // 图例：性别 + 称谓基准 + 三种关系线型
-  ctx.font = '11px "PingFang SC","Microsoft YaHei",sans-serif';
+  // 图例：性别 + 称谓基准 + 三种关系线型（与上方测量共用同一份定义）
+  ctx.font = LEGEND_FONT;
   let lx = pad;
   const ly = H - 26;
   ctx.fillStyle = '#6b7280';
   ctx.fillText('图例：', lx, ly);
-  lx += 40;
-  for (const [c, t] of [['#2563eb', '男'], ['#db2777', '女'], ['#059669', '称谓基准']]) {
+  lx += ctx.measureText('图例：').width + 4;
+  for (const [c, t] of legendDots) {
     ctx.fillStyle = c; ctx.beginPath(); ctx.arc(lx, ly - 4, 4, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#6b7280'; ctx.fillText(t, lx + 7, ly);
     lx += 14 + ctx.measureText(t).width + 12;
   }
-  const lineLegends = [
-    [EDGE_STYLE.bio, '亲生'],
-    [EDGE_STYLE.nonbio, '收养/继亲'],
-    [EDGE_STYLE.spouse, '配偶'],
-  ];
-  for (const [st, t] of lineLegends) {
+  for (const [st, t] of legendLines) {
     ctx.strokeStyle = st.color;
     ctx.lineWidth = 2;
     ctx.setLineDash(st.dash ? st.dash.split(' ').map(Number) : []);
