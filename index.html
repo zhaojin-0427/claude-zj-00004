@@ -155,6 +155,7 @@
   .tag-表亲 { background: #ffedd5; color: #c2410c; }
   .tag-远亲 { background: #f3f4f6; color: #4b5563; }
   .tag-无关联 { background: #f3f4f6; color: #9ca3af; }
+  .tag-配偶 { background: #fef9c3; color: #a16207; }
   .kin-row .kr-detail { color: var(--ink-3); font-size: 11px; margin: 3px 0 6px; }
   .kin-row .kr-edit { display: none; margin-top: 6px; }
   .kin-row.editing .kr-edit { display: block; }
@@ -576,6 +577,13 @@ function collateralSeniority(ego, target, pathA, pathB, a, b) {
 // sen>0：我为长，对方偏幼 → 称“弟/妹”；sen<0：我偏幼，对方为长 → 称“兄/姐”
 function elderSuffix(sen) { return sen > 0 ? '弟' : sen < 0 ? '兄' : '兄弟'; }
 function femaleElderSuffix(sen) { return sen > 0 ? '妹' : sen < 0 ? '姐' : '姐妹'; }
+// 性别未知时的中性兄弟姐妹称谓
+function neutralSiblingSuffix(sen) { return sen > 0 ? '弟/妹' : sen < 0 ? '兄/姐' : '兄弟姐妹'; }
+function siblingTerm(gender, sen) {
+  if (gender === 'female') return femaleElderSuffix(sen);
+  if (gender === 'male') return elderSuffix(sen);
+  return neutralSiblingSuffix(sen);
+}
 
 /** 找到 from 向上到 ancestorId 的路径上，紧邻 from 的第一步父/母节点 */
 function firstStep(from, ancestorId, prev) {
@@ -588,24 +596,52 @@ function firstStep(from, ancestorId, prev) {
   return byId(before);
 }
 
+/** 两人是否通过共同子女构成配偶；是则返回该子女 */
+function findSharedChild(xId, yId) {
+  return state.people.find(c =>
+    (c.fatherId === xId || c.motherId === xId) &&
+    (c.fatherId === yId || c.motherId === yId)) || null;
+}
+
 function kinship(egoId, targetId) {
   if (egoId === targetId) return { term: '本人', tag: '直系', detail: '' };
   const ego = byId(egoId), target = byId(targetId);
   if (!ego || !target) return null;
+
+  /* ---- 配偶：共同子女（婚姻关系，非血缘）---- */
+  // 必须排除祖先/后代：若一方是另一方的父/祖辈，不能因“共同子女”误判为配偶
+  const shared = findSharedChild(egoId, targetId);
+  const tIsAnc = bfsUp(egoId).dist.has(targetId);
+  const eIsAnc = bfsUp(targetId).dist.has(egoId);
+  if (shared && !tIsAnc && !eIsAnc) {
+    let term;
+    if (target.gender === 'male') term = '丈夫';
+    else if (target.gender === 'female') term = '妻子';
+    else term = '配偶';
+    return {
+      term, tag: '配偶',
+      detail: `因共同子女「${shared.name || '未命名'}」构成配偶关系`,
+      placeholder: target.gender === 'unknown'
+    };
+  }
 
   const A = bfsUp(egoId), B = bfsUp(targetId);
 
   /* ---- 目标是 ego 的祖先 ---- */
   if (A.dist.has(targetId)) {
     const n = A.dist.get(targetId);
+    const g = target.gender;
     let term;
-    if (n === 1) term = target.gender === 'female' ? '母亲' : '父亲';
-    else term = '曾'.repeat(Math.max(0, n - 2)) + (target.gender === 'female' ? '祖母' : '祖父');
+    if (n === 1) term = g === 'female' ? '母亲' : g === 'male' ? '父亲' : '父/母';
+    else {
+      const base = g === 'female' ? '祖母' : g === 'male' ? '祖父' : '祖父母';
+      term = '曾'.repeat(Math.max(0, n - 2)) + base;
+    }
     // 经母亲上溯到的祖辈为外祖父母
     if (n === 2) {
       const step = firstStep(egoId, targetId, A.prev);
       if (step && step.gender === 'female') {
-        term = target.gender === 'female' ? '外祖母' : '外祖父';
+        term = g === 'female' ? '外祖母' : g === 'male' ? '外祖父' : '外祖父母';
       }
     }
     return { term, tag: n >= 2 ? '祖孙' : '直系', detail: '' };
@@ -615,17 +651,20 @@ function kinship(egoId, targetId) {
     const n = B.dist.get(egoId);
     const step = firstStep(targetId, egoId, B.prev); // target 的直接父/母
     const viaMother = step && step.gender === 'female';
+    const g = target.gender;
     let term;
-    if (n === 1) term = target.gender === 'female' ? '女儿' : '儿子';
-    else if (n === 2) term = target.gender === 'female'
-      ? (viaMother ? '外孙女' : '孙女')
-      : (viaMother ? '外孙' : '孙子');
-    else term = '曾' + (target.gender === 'female' ? '孙女' : '孙');
+    if (n === 1) term = g === 'female' ? '女儿' : g === 'male' ? '儿子' : '孩子';
+    else if (n === 2) {
+      const outer = viaMother ? '外' : '';
+      term = g === 'female' ? outer + '孙女' : g === 'male' ? outer + '孙子' : outer + '孙辈';
+    } else {
+      term = '曾' + (g === 'female' ? '孙女' : g === 'male' ? '孙' : '孙辈');
+    }
     return { term, tag: n >= 2 ? '祖孙' : '直系', detail: '' };
   }
 
   const lca = findLCA(egoId, targetId, A, B);
-  if (!lca) return { term: '无亲属关联', tag: '无关联', detail: '两人物未通过父母关系连通', placeholder: true };
+  if (!lca) return { term: '无亲属关联', tag: '无关联', detail: '两人物未通过父母或配偶关系连通', placeholder: true };
 
   const anc = byId(lca.id);
   const a = lca.da, b = lca.db;
@@ -640,83 +679,99 @@ function kinship(egoId, targetId) {
     && pathA.slice(1).every(id => byId(id).gender === 'male')
     && pathB.slice(1).every(id => byId(id).gender === 'male');
   const prefix = maleLine ? '堂' : '表';
+  const tg = target.gender;
 
   /* ---- 兄弟姐妹 ---- */
   if (a === 1 && b === 1) {
-    if (target.gender === 'female') return { term: femaleElderSuffix(sen), tag: '兄弟姐妹', detail };
-    return { term: elderSuffix(sen), tag: '兄弟姐妹', detail };
+    return { term: siblingTerm(tg, sen), tag: '兄弟姐妹', detail };
   }
 
-  /* ---- (2,1) 父母辈：伯/叔/姑 vs 舅/姨。sen>0 表示 ego 之父为长，对方偏幼→叔 ---- */
+  /* ---- (2,1) 父母辈：伯/叔/姑 vs 舅/姨 ---- */
   if (a === 2 && b === 1) {
     if (linkA && linkA.gender === 'female') {
-      return { term: target.gender === 'female' ? '姨母' : '舅父', tag: '叔侄', detail };
+      if (tg === 'female') return { term: '姨母', tag: '叔侄', detail };
+      if (tg === 'male') return { term: '舅父', tag: '叔侄', detail };
+      return { term: '舅/姨', tag: '叔侄', detail, placeholder: true };
     }
-    if (target.gender === 'female') return { term: '姑母', tag: '叔侄', detail };
-    return { term: sen > 0 ? '叔父' : sen < 0 ? '伯父' : '伯/叔父', tag: '叔侄', detail };
+    if (tg === 'female') return { term: '姑母', tag: '叔侄', detail };
+    if (tg === 'male') return { term: sen > 0 ? '叔父' : sen < 0 ? '伯父' : '伯/叔父', tag: '叔侄', detail };
+    return { term: sen > 0 ? '叔/姑' : sen < 0 ? '伯/姑' : '伯/叔/姑', tag: '叔侄', detail, placeholder: true };
   }
 
   /* ---- (1,2) 子女辈：侄/甥（由与我同辈的连接人性别决定） ---- */
   if (a === 1 && b === 2) {
     if (linkB && linkB.gender === 'female') {
-      return { term: target.gender === 'female' ? '甥女' : '外甥', tag: '叔侄', detail };
+      if (tg === 'female') return { term: '甥女', tag: '叔侄', detail };
+      if (tg === 'male') return { term: '外甥', tag: '叔侄', detail };
+      return { term: '甥/甥女', tag: '叔侄', detail, placeholder: true };
     }
-    return { term: target.gender === 'female' ? '侄女' : '侄子', tag: '叔侄', detail };
+    if (tg === 'female') return { term: '侄女', tag: '叔侄', detail };
+    if (tg === 'male') return { term: '侄子', tag: '叔侄', detail };
+    return { term: '侄/侄女', tag: '叔侄', detail, placeholder: true };
   }
 
   /* ---- (2,2) 堂/表兄弟姐妹 ---- */
   if (a === 2 && b === 2) {
-    const suf = target.gender === 'female' ? femaleElderSuffix(sen) : elderSuffix(sen);
-    return { term: prefix + suf, tag: maleLine ? '堂亲' : '表亲', detail };
+    return { term: prefix + siblingTerm(tg, sen), tag: maleLine ? '堂亲' : '表亲', detail };
   }
 
-  /* ---- (3,2) 父母的堂/表兄弟姐妹：堂伯叔姑 / 表伯叔姑 ---- */
+  /* ---- (3,2) 父母的堂/表兄弟姐妹 ---- */
   if (a === 3 && b === 2) {
-    if (target.gender === 'female') return { term: prefix + '姑', tag: maleLine ? '堂亲' : '表亲', detail, placeholder: true };
-    return { term: prefix + (sen > 0 ? '叔' : sen < 0 ? '伯' : '伯/叔'), tag: maleLine ? '堂亲' : '表亲', detail, placeholder: true };
+    if (tg === 'female') return { term: prefix + '姑', tag: maleLine ? '堂亲' : '表亲', detail, placeholder: true };
+    if (tg === 'male') return { term: prefix + (sen > 0 ? '叔' : sen < 0 ? '伯' : '伯/叔'), tag: maleLine ? '堂亲' : '表亲', detail, placeholder: true };
+    return { term: prefix + '伯/叔/姑', tag: maleLine ? '堂亲' : '表亲', detail, placeholder: true };
   }
 
-  /* ---- (2,3) 堂/表兄弟姐妹之子女：堂/表 侄甥 ---- */
+  /* ---- (2,3) 堂/表兄弟姐妹之子女 ---- */
   if (a === 2 && b === 3) {
     if (linkB && linkB.gender === 'female') {
-      return { term: prefix + (target.gender === 'female' ? '甥女' : '甥'), tag: maleLine ? '堂亲' : '表亲', detail, placeholder: true };
+      if (tg === 'female') return { term: prefix + '甥女', tag: maleLine ? '堂亲' : '表亲', detail, placeholder: true };
+      if (tg === 'male') return { term: prefix + '甥', tag: maleLine ? '堂亲' : '表亲', detail, placeholder: true };
+      return { term: prefix + '甥/甥女', tag: maleLine ? '堂亲' : '表亲', detail, placeholder: true };
     }
-    return { term: prefix + (target.gender === 'female' ? '侄女' : '侄'), tag: maleLine ? '堂亲' : '表亲', detail, placeholder: true };
+    if (tg === 'female') return { term: prefix + '侄女', tag: maleLine ? '堂亲' : '表亲', detail, placeholder: true };
+    if (tg === 'male') return { term: prefix + '侄', tag: maleLine ? '堂亲' : '表亲', detail, placeholder: true };
+    return { term: prefix + '侄/侄女', tag: maleLine ? '堂亲' : '表亲', detail, placeholder: true };
   }
 
   /* ---- (3,3) 再从兄弟 / 二表 ---- */
   if (a === 3 && b === 3) {
-    const suf = target.gender === 'female' ? femaleElderSuffix(sen) : elderSuffix(sen);
-    return { term: (maleLine ? '再从' : '二表') + suf, tag: maleLine ? '堂亲' : '表亲', detail, placeholder: true };
+    return { term: (maleLine ? '再从' : '二表') + siblingTerm(tg, sen), tag: maleLine ? '堂亲' : '表亲', detail, placeholder: true };
   }
 
-  /* ---- (3,1) 祖父母的同辈：伯祖父母/叔祖父母/姑祖母，母系则舅祖父/姨祖母 ---- */
+  /* ---- (3,1) 祖父母的同辈：伯/叔/姑祖母，母系则舅/姨祖父 ---- */
   if (a === 3 && b === 1) {
     if (linkA && linkA.gender === 'female') {
-      return { term: target.gender === 'female' ? '姨祖母' : '舅祖父', tag: '祖孙', detail, placeholder: true };
+      if (tg === 'female') return { term: '姨祖母', tag: '祖孙', detail, placeholder: true };
+      if (tg === 'male') return { term: '舅祖父', tag: '祖孙', detail, placeholder: true };
+      return { term: '舅/姨祖父', tag: '祖孙', detail, placeholder: true };
     }
-    if (target.gender === 'female') return { term: '姑祖母', tag: '祖孙', detail, placeholder: true };
-    return { term: sen > 0 ? '叔祖父' : sen < 0 ? '伯祖父' : '伯/叔祖父', tag: '祖孙', detail, placeholder: true };
+    if (tg === 'female') return { term: '姑祖母', tag: '祖孙', detail, placeholder: true };
+    if (tg === 'male') return { term: sen > 0 ? '叔祖父' : sen < 0 ? '伯祖父' : '伯/叔祖父', tag: '祖孙', detail, placeholder: true };
+    return { term: '伯/叔祖父', tag: '祖孙', detail, placeholder: true };
   }
 
   /* ---- (1,3) 兄弟姐妹之孙辈：侄孙 / 甥孙 ---- */
   if (a === 1 && b === 3) {
     if (linkB && linkB.gender === 'female') {
-      return { term: prefix === '堂' ? '甥孙' : '表' + (target.gender === 'female' ? '甥孙女' : '甥孙'), tag: '叔侄', detail, placeholder: true };
+      if (tg === 'female') return { term: '甥孙女', tag: '叔侄', detail, placeholder: true };
+      if (tg === 'male') return { term: '甥孙', tag: '叔侄', detail, placeholder: true };
+      return { term: '甥孙辈', tag: '叔侄', detail, placeholder: true };
     }
-    return { term: (target.gender === 'female' ? '侄孙女' : '侄孙'), tag: '叔侄', detail, placeholder: true };
+    if (tg === 'female') return { term: '侄孙女', tag: '叔侄', detail, placeholder: true };
+    if (tg === 'male') return { term: '侄孙', tag: '叔侄', detail, placeholder: true };
+    return { term: '侄孙辈', tag: '叔侄', detail, placeholder: true };
   }
 
   /* ---- 更远：远房占位 ---- */
   {
     let suf;
-    if (a === b) suf = target.gender === 'female' ? femaleElderSuffix(sen) : elderSuffix(sen);
-    else if (a > b) suf = '祖辈';
+    if (a === b) suf = siblingTerm(tg, sen);
+    else if (a > b) suf = tg === 'female' ? '祖母辈' : tg === 'male' ? '祖父辈' : '祖辈';
     else suf = '孙辈';
     return { term: (maleLine ? '远房堂' : '远房表') + suf, tag: '远亲', detail, placeholder: true };
   }
 }
-
 
 
 /** 称谓（含用户手工修正） */
@@ -766,7 +821,7 @@ function applyView() {
 function renderCanvas() {
   nodeLayer.innerHTML = '';
   edgeLayer.innerHTML = '';
-  document.getElementById('emptyHint').style.display = state.people.length ? 'none' : 'flex';
+  document.getElementById('emptyHint').style.display = (state.people.length || state.draft) ? 'none' : 'flex';
   const hiddenSet = hiddenByCollapse();
 
   // 配偶连线（无父母连接、但共享子女）——浅灰虚线
@@ -1463,14 +1518,41 @@ function renderEditorForm(p, isDraft) {
     state.selectedId = null; renderAll();
   });
   sideBody.querySelector('#fSave').addEventListener('click', async () => {
+    // 先做输入校验，避免校验失败时却已改动关系数据
+    const name = sideBody.querySelector('#fName').value.trim();
+    const fv0 = sideBody.querySelector('#fFather').value;
+    const mv0 = sideBody.querySelector('#fMother').value;
+    const gR = strictInt(sideBody.querySelector('#fGen').value);
+    const oRaw = sideBody.querySelector('#fOrder').value.trim();
+    if (!name) { toast('请填写姓名'); return; }
+    if (fv0 && fv0 === mv0) { toast('父亲和母亲不能是同一人'); return; }
+    if (!gR.ok || gR.value < 0) { toast('辈分必须为不小于 0 的整数（不能填小数）'); return; }
+    if (oRaw !== '') {
+      const o = strictInt(oRaw);
+      if (!o.ok) { toast('出生顺序必须为整数（不能填 1.5 这样的小数），或留空'); return; }
+      if (o.value < 1) { toast('出生顺序需为不小于 1 的正整数（或留空表示不排行）'); return; }
+    }
+
+    // 性别变更：先处理其作为他人父/母的关系槽位
+    if (!isDraft && gender !== p.gender) {
+      const plan = planGenderMigration(p, gender);
+      if (plan.blocks.length) {
+        const detail = plan.blocks.map(b => `子女「${b.child.name || '未命名'}」的${gender === 'female' ? '母亲' : '父亲'}槽已被「${b.other?.name || '未命名'}」占用`).join('；');
+        const ok = await confirmModal('性别与父母关系冲突',
+          `将「${p.name}」改为${gender === 'female' ? '女' : gender === 'male' ? '男' : '未知'}后，${detail}。继续保存将解除 TA 在这些子女中的父/母关联（子女不会删除，可之后重新指定）。是否继续？`);
+        if (!ok) return;
+        for (const b of plan.blocks) {
+          if (b.child.fatherId === p.id) b.child.fatherId = null;
+          if (b.child.motherId === p.id) b.child.motherId = null;
+        }
+      }
+      applyGenderMigration(p, plan.moves);
+    }
     // 辈分冲突二次确认
-    const fv = sideBody.querySelector('#fFather').value;
-    const mv = sideBody.querySelector('#fMother').value;
-    const genV = parseInt(sideBody.querySelector('#fGen').value, 10);
-    const pg = [fv, mv].map(v => v ? byId(v)?.gen : null).filter(g => typeof g === 'number');
-    if (pg.length && !isNaN(genV) && genV <= Math.max(...pg)) {
+    const pg = [fv0, mv0].map(v => v ? byId(v)?.gen : null).filter(g => typeof g === 'number');
+    if (pg.length && gR.value <= Math.max(...pg)) {
       const ok = await confirmModal('辈分异常',
-        `该人物辈分（第${genV}辈）不晚于其父母（第${Math.max(...pg)}辈），子女通常应为父母下一辈。仍要保存吗？`);
+        `该人物辈分（第${gR.value}辈）不晚于其父母（第${Math.max(...pg)}辈），子女通常应为父母下一辈。仍要保存吗？`);
       if (!ok) return;
     }
     savePersonForm(p, gender, isDraft);
@@ -1491,29 +1573,42 @@ function renderEditorForm(p, isDraft) {
   });
 }
 
+/** 严格解析整数：小数、非数字、空串均拒绝；空串（fieldEmpty）返回 null 表示未填 */
+function strictInt(raw, { allowEmpty = false } = {}) {
+  const s = String(raw).trim();
+  if (s === '') return allowEmpty ? { ok: true, value: null } : { ok: false };
+  const n = Number(s);
+  if (!Number.isFinite(n) || !Number.isInteger(n)) return { ok: false };
+  return { ok: true, value: n };
+}
+
 function savePersonForm(p, gender, isDraft) {
   const name = sideBody.querySelector('#fName').value.trim();
-  const gen = parseInt(sideBody.querySelector('#fGen').value, 10);
+  const genRaw = sideBody.querySelector('#fGen').value;
   const orderRaw = sideBody.querySelector('#fOrder').value.trim();
-  const order = orderRaw === '' ? null : parseInt(orderRaw, 10);
   const fatherId = sideBody.querySelector('#fFather').value || null;
   const motherId = sideBody.querySelector('#fMother').value || null;
   const note = sideBody.querySelector('#fNote').value.trim();
 
   if (!name) { toast('请填写姓名'); return false; }
   if (fatherId === motherId && fatherId) { toast('父亲和母亲不能是同一人'); return false; }
-  if (orderRaw !== '' && (isNaN(order) || order < 1)) { toast('出生顺序需为不小于 1 的正整数（或留空表示不排行）'); return false; }
-  if (isNaN(gen)) { toast('辈分为必填整数'); return false; }
 
-  // 辈分：父母存在时默认取较高者 +1
-  let finalGen = gen;
-  const fp = fatherId ? byId(fatherId) : null;
-  const mp = motherId ? byId(motherId) : null;
-  const parentMax = [fp, mp].map(x => x?.gen).filter(g => typeof g === 'number');
+  const genR = strictInt(genRaw);
+  if (!genR.ok) { toast('辈分必须为整数（不能填 2.5 这样的小数）'); return false; }
+  const gen = genR.value;
+  if (gen < 0) { toast('辈分不能为负数'); return false; }
+
+  let order = null;
+  if (orderRaw !== '') {
+    const o = strictInt(orderRaw);
+    if (!o.ok) { toast('出生顺序必须为整数（不能填 1.5 这样的小数），或留空表示不排行'); return false; }
+    if (o.value < 1) { toast('出生顺序需为不小于 1 的正整数（或留空表示不排行）'); return false; }
+    order = o.value;
+  }
 
   const saved = {
-    name, gender, gen: finalGen,
-    order: order === null || isNaN(order) ? null : order,
+    name, gender, gen,
+    order,
     fatherId, motherId, note,
   };
 
@@ -1532,6 +1627,35 @@ function savePersonForm(p, gender, isDraft) {
   renderAll();
   toast(isDraft ? '人物已添加' : '已保存');
   return true;
+}
+
+/**
+ * 人物性别变更时，迁移其在他人“父/母”槽位中的引用。
+ * 返回 {ok, moved, cleared, conflicts}；冲突时需用户确认。
+ */
+function planGenderMigration(p, newGender) {
+  if (newGender === p.gender) return { moves: [], blocks: [] };
+  const moves = [], blocks = [];
+  for (const c of state.people) {
+    if (c.id === p.id) continue;
+    const asFather = c.fatherId === p.id;
+    const asMother = c.motherId === p.id;
+    if (newGender === 'female' && asFather) {
+      if (!c.motherId) moves.push({ child: c, from: 'fatherId', to: 'motherId', overwrite: null });
+      else if (c.motherId !== p.id) blocks.push({ child: c, other: byId(c.motherId) });
+    } else if (newGender === 'male' && asMother) {
+      if (!c.fatherId) moves.push({ child: c, from: 'motherId', to: 'fatherId', overwrite: null });
+      else if (c.fatherId !== p.id) blocks.push({ child: c, other: byId(c.fatherId) });
+    }
+  }
+  return { moves, blocks };
+}
+function applyGenderMigration(p, moves) {
+  for (const m of moves) {
+    const c = m.child;
+    c[m.to] = p.id;
+    c[m.from] = null;
+  }
 }
 
 function deletePerson(id) {
